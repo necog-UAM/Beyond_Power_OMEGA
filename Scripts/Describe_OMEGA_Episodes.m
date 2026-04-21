@@ -138,8 +138,7 @@ Nbands = length(freqnames);
 end
 
 % Store results
-save([p.results '\oscillatory_results_3cycb', 'osc_global', 'osc_any_freq', 'osc_by_band','osc_by_freq','band_overlap','exclusive_band'])
-
+save([p.results '\oscillatory_results_3cycb.mat'], 'osc_global', 'osc_any_freq', 'osc_by_band','osc_by_freq','band_overlap','exclusive_band')
 load([p.results '\oscillatory_results_3cycb.mat'])
 
 
@@ -165,6 +164,7 @@ load([p.results '\oscillatory_results_3cycb.mat'])
     sBOSC_sourcefig(mean_osc_any_freq, 'mean_osc_any_freq', cfg) % add if filename save
 
 % Frequency bands oscillatory time
+    addpath('Z:\Toolbox\fieldtrip-20230118') % Path to Fieldtrip
     colmap = {'Blues', 'Greens', 'YlOrBr', 'Oranges', 'Reds'};
     Nbands = length(freqnames);
     mean_osc_band = zeros(Nvoxin, Nbands);
@@ -200,6 +200,8 @@ load([p.results '\oscillatory_results_3cycb.mat'])
     overlap_graph = (mean_band_overlap / osc) * 100;
     exclusive_graph = (mean_exclusive_band / osc) * 100;
 
+    piecol = jet_omega_mod;
+    piecols = [piecol(1,:); piecol(20,:); piecol(40,:); piecol(55,:); piecol(64,:)];
     idx_fb = 1:Nbands;
     X_coords = [0, 2, 0, -2, 0, 1.5];
     Y_coords = [0, 0, 2, 0, -2, 1.5];
@@ -256,6 +258,39 @@ load([p.results '\oscillatory_results_3cycb.mat'])
             close;
         end
 
+%% Export Raw Percentage Table for ROIs
+
+% 1. Force ROI names into a column array for the table
+roi_column = aal_label_reduc(:); 
+
+% Initialize the table with the ROI names
+ROI_Table = table(roi_column, 'VariableNames', {'ROI_Name'});
+
+% 2. Loop through each frequency band to calculate stats
+for fb = 1:Nbands
+    % Extract raw percentages for this specific band: [Nroi x Nsub]
+    raw_band_data = squeeze(rois(:, fb, :));
+    
+    % Calculate group-level statistics across subjects (dimension 2)
+    band_median = median(raw_band_data, 2);
+    band_std = std(raw_band_data, 0, 2);
+    
+    % Create dynamic column names (e.g., 'alpha_Median_Pct')
+    col_name_median = sprintf('%s_Median_Pct', freqnames{fb});
+    col_name_std = sprintf('%s_Std_Pct', freqnames{fb});
+    
+    % Append the new columns directly to the table
+    ROI_Table.(col_name_median) = band_median;
+    ROI_Table.(col_name_std) = band_std;
+end
+
+% 3. Define file path and export
+% Saving as CSV makes it easily importable to Excel, R, SPSS, or Python
+table_filename = fullfile(p.results, 'ROI_Raw_Percentages.csv');
+writetable(ROI_Table, table_filename);
+
+% Print confirmation to the command window
+fprintf('Raw percentages table successfully saved to:\n%s\n', table_filename);
 
 %% ROIs
     load(['Z:\OMEGA\OMEGA-NaturalFrequencies-main\mat_files\aal_voxel_label_10mm.mat'])
@@ -311,3 +346,122 @@ load([p.results '\oscillatory_results_3cycb.mat'])
     linkaxes(t.Children, 'y');
     
     sBOSC_nii(squeeze(median(roivoxs(:,3,:),3)), 'tst')
+
+%% ROI z-scored
+
+% Z-scores for each subject and band
+z_osc_by_band = zeros(Nsub, Nvoxin, Nbands);
+
+for s = 1:Nsub
+    for fb = 1:Nbands
+        curr_data = osc_by_band(s, :, fb);
+        z_osc_by_band(s, :, fb) = (curr_data - mean(curr_data)) ./ std(curr_data);
+    end
+end
+
+rois_z = zeros(Nroi, Nbands, Nsub);
+
+for roi = 1:Nroi
+    inds = find(label_inside_aal_reduc == roi);
+    voxs = voxel_inside_aal(inds);
+    for fb = 1:Nbands
+        rois_z(roi, fb, :) = squeeze(median(z_osc_by_band(:, voxs, fb), 2));
+    end
+end
+
+% Boxplots 
+Ncols = 8;
+Nrows = 5;
+figure('Name', 'ROI z-scores by Band');
+t = tiledlayout(Nrows, Ncols, 'TileSpacing', 'compact', 'Padding', 'tight');
+
+for roi = 1:Nroi
+    boxdata = squeeze(rois_z(roi, :, :))'; 
+    
+    nexttile(roi);
+    boxplot(boxdata, 'Symbol', '', 'Widths', 0.8, 'Color', 'k', 'Notch', 'off');
+    
+    h = flipud(findobj(gca, 'Tag', 'Box'));
+    for k = 1:length(h)
+        XData = get(h(k), 'XData');
+        YData = get(h(k), 'YData');    
+        patch(XData, YData, piecols(k,:), 'FaceAlpha', 0.7);    
+        delete(h(k));
+    end
+    
+    % Zero-line indicates the brain average for that frequency
+    hold on;
+    yline(0, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5);
+    
+    title([aal_label_reduc{roi}], 'FontSize', 8, 'Interpreter', 'none'); 
+    xticklabels([]);
+    set(gca, 'FontSize', 7, 'YGrid', 'on', 'GridAlpha', 0.3);
+    ylim([-2.5 4]);
+    box off;
+end
+
+linkaxes(t.Children, 'y');
+
+% Another scheme
+% Z-scores for each subject and band
+z_osc_by_band = zeros(Nsub, Nvoxin, Nbands);
+for s = 1:Nsub
+    for fb = 1:Nbands
+        curr_data = osc_by_band(s, :, fb);
+        z_osc_by_band(s, :, fb) = (curr_data - mean(curr_data)) ./ std(curr_data);
+    end
+end
+
+rois_z = zeros(Nroi, Nbands, Nsub);
+for roi = 1:Nroi
+    inds = find(label_inside_aal_reduc == roi);
+    voxs = voxel_inside_aal(inds);
+    for fb = 1:Nbands
+        rois_z(roi, fb, :) = squeeze(median(z_osc_by_band(:, voxs, fb), 2));
+    end
+end
+
+%% Boxplots (Individual Figures)
+% Create a directory to store the individual figures
+save_dir = fullfile(p.figures, 'ROI_Individual_Boxplots');
+if ~exist(save_dir, 'dir')
+    mkdir(save_dir);
+end
+
+for roi = 1:Nroi
+    boxdata = squeeze(rois_z(roi, :, :))'; 
+    
+    % Initialize a new standalone figure for this ROI
+    figure('Name', aal_label_reduc{roi}, 'Position', [100, 100, 600, 450], 'Color', 'w');
+    boxplot(boxdata, 'Symbol', '', 'Widths', 0.75, 'Color', 'k', 'Notch', 'off');
+    h = flipud(findobj(gca, 'Tag', 'Box'));
+    for k = 1:length(h)
+        XData = get(h(k), 'XData');
+        YData = get(h(k), 'YData');    
+        patch(XData, YData, piecols(k,:), 'FaceAlpha', 0.7);    
+        delete(h(k));
+    end
+    
+    % Zero-line indicates the brain average for that frequency
+    hold on;
+    yline(0, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 1); % Slightly thicker for standalone fig
+    
+    % Improved formatting since we now have the space of a full figure
+    title(aal_label_reduc{roi}, 'FontSize', 14, 'Interpreter', 'none', 'FontWeight', 'bold'); 
+    
+    % Since it's not cramped, we can finally label the X-axis with the band names
+    xticklabels(freqnames); 
+    ylabel('Spatial Z-score', 'FontSize', 12);
+    
+    set(gca, 'FontSize', 12, 'YGrid', 'on', 'GridAlpha', 0.3);
+    ylim([-2.5 3.5]);
+    xlim([0.4 5.6]);
+    box off;
+    
+    % Save the figure and close it
+    filename = fullfile(save_dir, sprintf('ROI_%02d_%s.png', roi, aal_label_reduc{roi}));
+    saveas(gcf, filename);
+    close(gcf); 
+end
+
+fprintf('All 40 individual ROI boxplots saved to: %s\n', save_dir);
