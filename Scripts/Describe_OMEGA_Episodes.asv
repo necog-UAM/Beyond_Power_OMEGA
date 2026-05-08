@@ -350,7 +350,6 @@ load([p.results '\oscillatory_results_3cycc.mat'])
     sBOSC_nii(squeeze(median(roivoxs(:,3,:),3)), 'tst')
 
 %% ROIs (osc_anyfreq)
-% Table 1
     load(['Z:\OMEGA\OMEGA-NaturalFrequencies-main\mat_files\aal_voxel_label_10mm.mat'])
     Nroi = length(aal_label_reduc);
 
@@ -427,7 +426,7 @@ table_filename = fullfile(p.results, 'ROI_Raw_Percentages.csv');
 writetable(ROI_Table, table_filename);
 
 %% ROI z-scored
-% Table 1
+
 % Z-scores for each subject and band
 z_osc_by_band = zeros(Nsub, Nvoxin, Nbands);
 
@@ -500,7 +499,6 @@ for roi = 1:Nroi
 end
 
 %% Boxplots (Individual Figures)
-% Supplementary 1
 save_dir = fullfile(p.figures, 'ROI_Individual_Boxplots');
 if ~exist(save_dir, 'dir')
     mkdir(save_dir);
@@ -596,7 +594,6 @@ for reg = 1:Nregions
 end
 
 %% Boxplot
-% Figure 3
 figure
 tl = tiledlayout(1, Nregions, 'TileSpacing', 'compact', 'Padding', 'tight');
 letters = 'abcde';
@@ -686,7 +683,7 @@ grand_dur_cyc_sd = nanstd(mean_dur_cyc_subj, 0, 1);
 
 
 %% rmANOVA duración de episodios (todo el cerebro)
-% Figure 4
+
 T_rm   = array2table(mean_dur_cyc_subj, 'VariableNames', freqnames);
 within = table(freqnames', 'VariableNames', {'Band'});
 rm     = fitrm(T_rm, 'delta-highbeta~1', 'WithinDesign', within);

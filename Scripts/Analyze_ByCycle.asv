@@ -122,10 +122,10 @@ for fb = 1:length(freqnames)
 
         minval = min(tValspermcor(tValspermcor>0));
         if ~isempty(minval)
-            mincolaxis(fb,param) = minval;
+         mincolaxis(fb,param) = minval;
         end
 
-        maxval = max(tValspermcor(tValspermcor<0));
+        maxval = max(tValspermcor);
         if ~isempty(maxval)
             maxcolaxis(fb,param) =  maxval;
         end
@@ -134,74 +134,96 @@ for fb = 1:length(freqnames)
     end
 end
 
-% ROIs
-load(['Z:\OMEGA\OMEGA-NaturalFrequencies-main\mat_files\aal_voxel_label_10mm.mat'])
+%% Correlacion
+%% Correlación amplitud–período vóxel a vóxel (cycle-by-cycle)
 
-[~, idx_rdsym] = ismember('time_rdsym', features);
-[~, idx_ptsym] = ismember('time_ptsym', features);
+addpath('Z:\Toolbox\slanCM\slanCM')
 
-rdsym_roi = nan(Nsub, Nroi, Nbands);
-ptsym_roi = nan(Nsub, Nroi, Nbands);
+paramlist_corr = {'band_amp', 'period'};
+[~, idx_amp]    = ismember('band_amp', features);
+[~, idx_period] = ismember('period',   features);
 
-for fb = 1:Nbands
-    load([p.results '\avgshapes_' freqnames{fb}])  % loads avgshape [Nsub x Nvoxin x features]
-    
-    rdsym_mat = squeeze(avgshape(:, :, idx_rdsym));  % [Nsub x Nvoxin]
-    ptsym_mat = squeeze(avgshape(:, :, idx_ptsym));  % [Nsub x Nvoxin]
-    
-    for roi = 1:Nroi
-        inds = find(label_inside_aal_reduc == roi);
-        voxs = voxel_inside_aal(inds);
-        rdsym_roi(:, roi, fb) = mean(rdsym_mat(:, voxs), 2, 'omitnan');
-        ptsym_roi(:, roi, fb) = mean(ptsym_mat(:, voxs), 2, 'omitnan');
+r_vox    = nan(Nvoxin, length(freqnames));
+t_vox    = nan(Nvoxin, length(freqnames));
+sig_mask = false(Nvoxin, length(freqnames));
+
+for fb = 1:length(freqnames)
+
+    load([p.results '\avgshapes_' freqnames{fb}])  % carga avgshape
+
+    amp_mat    = squeeze(avgshape(:, :, idx_amp));    % [Nsub x Nvoxin]
+    period_mat = squeeze(avgshape(:, :, idx_period)); % [Nsub x Nvoxin]
+
+    % Vóxeles con suficientes sujetos válidos
+    n_valid = sum(~isnan(amp_mat) & ~isnan(period_mat), 1); % [1 x Nvoxin]
+    valid_vox = n_valid >= 10;
+
+    % Centrar eliminando la media (ignorando NaN)
+    amp_c    = amp_mat(:, valid_vox)    - mean(amp_mat(:, valid_vox),    1, 'omitnan');
+    period_c = period_mat(:, valid_vox) - mean(period_mat(:, valid_vox), 1, 'omitnan');
+
+    % NaN -> 0 tras centrar (no contribuyen al producto cruzado)
+    amp_c(isnan(amp_c))       = 0;
+    period_c(isnan(period_c)) = 0;
+
+    % Correlación vectorizada
+    num   = sum(amp_c .* period_c, 1);
+    denom = sqrt(sum(amp_c.^2, 1) .* sum(period_c.^2, 1));
+    r_tmp = (num ./ denom)';  % [Nvoxin_valid x 1]
+
+    r_vox(valid_vox, fb) = r_tmp;
+
+    % Convertir a t
+    n = n_valid(valid_vox)';
+    t_vox(valid_vox, fb) = r_tmp .* sqrt((n - 2) ./ (1 - r_tmp.^2));
+
+    %% Permutaciones (consistente con el resto del script)
+    nperm    = 1000;
+    maxTperm = nan(nperm, 1);
+
+    amp_full    = amp_mat(:, valid_vox);
+    period_full = period_mat(:, valid_vox);
+
+    for pp = 1:nperm
+        permsign = (rand(Nsub, 1) > 0.5) * 2 - 1;  % [Nsub x 1], +1 o -1
+
+        amp_perm = amp_full .* permsign;
+        amp_perm = amp_perm - mean(amp_perm, 1, 'omitnan');
+        amp_perm(isnan(amp_perm)) = 0;
+
+        num_p   = sum(amp_perm .* period_c, 1);
+        denom_p = sqrt(sum(amp_perm.^2, 1) .* sum(period_c.^2, 1));
+        r_perm  = (num_p ./ denom_p)';
+
+        n_perm  = n_valid(valid_vox)';
+        t_perm  = r_perm .* sqrt((n_perm - 2) ./ (1 - r_perm.^2));
+        maxTperm(pp) = max(abs(t_perm), [], 'omitnan');
     end
+
+    thresh_t = prctile(maxTperm, 95);
+    sig_mask(valid_vox, fb) = abs(t_vox(valid_vox, fb)) > thresh_t;
+
+    fprintf('Banda %s: %d vóxeles significativos de %d válidos\n', ...
+        freqnames{fb}, sum(sig_mask(:, fb)), sum(valid_vox));
 end
 
-for fb = 1:Nbands
-    figure('Position', [100 100 Ncols*180 Nrows*180], 'Color', 'w');
-    tl = tiledlayout(Nrows, Ncols, 'TileSpacing', 'compact', 'Padding', 'tight');
-    sgtitle(sprintf('%s — rdsym', freqnames{fb}), 'FontSize', 13, 'FontWeight', 'bold');
+%% Enmascarar y plotear
+cmap_corr = slanCM('RdBu_r', 256);
 
-    for roi = 1:Nroi
-        x = rdsym_roi(:, roi, fb);
-        valid = ~isnan(x);
+r_vox_masked = r_vox;
+r_vox_masked(~sig_mask) = 0;
 
-        nexttile;
-        histogram(x(valid), 10, 'FaceColor', piecols(fb,:), ...
-            'EdgeColor', 'none', 'FaceAlpha', 0.7, 'Normalization', 'probability');
-        hold on;
-        xline(median(x(valid), 'omitnan'), 'k-', 'LineWidth', 1.5);
-        xline(0.5, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);  % 0.5 = symmetry
-        title(aal_label_reduc{roi}, 'Interpreter', 'none', 'FontSize', 7);
-        set(gca, 'FontSize', 7, 'Box', 'off', 'TickDir', 'out');
-        xlim([0.15 0.35])
-        hold off;
-    end
-
-    saveas(gcf, fullfile(p.figures, ['rdsym_dist_roi_' freqnames{fb} '.png']));
-    close;
-
-    % Same for ptsym
-    figure('Position', [100 100 Ncols*180 Nrows*180], 'Color', 'w');
-    tl = tiledlayout(Nrows, Ncols, 'TileSpacing', 'compact', 'Padding', 'tight');
-    sgtitle(sprintf('%s — ptsym', freqnames{fb}), 'FontSize', 13, 'FontWeight', 'bold');
-
-    for roi = 1:Nroi
-        x = ptsym_roi(:, roi, fb);
-        valid = ~isnan(x);
-
-        nexttile;
-        histogram(x(valid), 10, 'FaceColor', piecols(fb,:), ...
-            'EdgeColor', 'none', 'FaceAlpha', 0.7, 'Normalization', 'probability');
-        hold on;
-        xline(median(x(valid), 'omitnan'), 'k-', 'LineWidth', 1.5);
-        xline(0.5, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);
-        title(aal_label_reduc{roi}, 'Interpreter', 'none', 'FontSize', 7);
-        set(gca, 'FontSize', 7, 'Box', 'off', 'TickDir', 'out');
-        xlim([0.15 0.25])
-        hold off;
-    end
-
-    saveas(gcf, fullfile(p.figures, ['ptsym_dist_roi_' freqnames{fb} '.png']));
-    close;
+for fb = 1:length(freqnames)
+    cfg        = [];
+    cfg.colmap = cmap_corr;
+    cfg.colim  = [-0.6 0.6];
+    cfg.interp = 'linear';
+    sBOSC_sourcefig2(r_vox_masked(:, fb), ...
+        fullfile(p.figures, ['corr_amp_period_' freqnames{fb}]), cfg);
+    sgtitle(freqnames{fb}, 'Interpreter', 'none');
+    close all
 end
+
+%% Guardar
+save(fullfile(p.results, 'corr_amp_period_vox.mat'), ...
+    'r_vox', 't_vox', 'sig_mask', 'r_vox_masked');
