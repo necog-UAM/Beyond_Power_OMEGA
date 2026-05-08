@@ -906,8 +906,7 @@ for fb = 1:Nbands
     end
 end
 
-
-%% Correlation duration and power
+%% Correlation duration and power (Voxel-wise)
 r_vox  = nan(Nvoxin, Nbands);
 t_vox  = nan(Nvoxin, Nbands);
 sig_vox = false(Nvoxin, Nbands);
@@ -917,7 +916,6 @@ min_r_thresh = zeros(Nbands, 1);
 max_r_thresh = zeros(Nbands, 1);
 mincolaxis = zeros(Nbands, 1);
 maxcolaxis = zeros(Nbands, 1);
-
 cmap = flipud(slanCM('PuOr'));
 cmap(100:156, :) = [];
 cmap_no_white2 = interp1(linspace(0, 1, size(cmap,1)), cmap, linspace(0, 1, 256));
@@ -992,12 +990,11 @@ for fb = 1:Nbands
     sBOSC_sourcefig2(r_masked, fullfile(p.figures, ['corr_dur_pow_' freqnames{fb}]), cfg);
     close all
 end
-%
-%% Scatterplots voxels con mayor y menor correlación significativa
 
-% ----- PARÁMETRO DE CONFIGURACIÓN -----
-TopN = 8; % Para 2x3 necesitas exactamente 6
-% --------------------------------------
+%% Correlation duration and power (ROI-wise)
+Nroi = length(aal_label_reduc);
+r_roi = nan(Nroi, Nbands);
+p_roi = nan(Nroi, Nbands);
 
 for fb = 1:Nbands
     dur_mat = squeeze(dur_subj_vox(:, :, fb));
@@ -1007,7 +1004,34 @@ for fb = 1:Nbands
     dur_z = (dur_mat - mean(dur_mat, 2, 'omitnan')) ./ std(dur_mat, 0, 2, 'omitnan');
     pow_z = (pow_mat - mean(pow_mat, 2, 'omitnan')) ./ std(pow_mat, 0, 2, 'omitnan');
     
-    % Significant ROIs only
+    for roi = 1:Nroi
+        inds = find(label_inside_aal_reduc == roi);
+        voxs = voxel_inside_aal(inds);
+        
+        x = mean(dur_z(:, voxs), 2, 'omitnan'); 
+        y = mean(pow_z(:, voxs), 2, 'omitnan');
+        valid = ~isnan(x) & ~isnan(y);
+        
+        if sum(valid) > 3
+            [R_mat, P_mat] = corrcoef(x(valid), y(valid));
+            r_roi(roi, fb) = R_mat(1,2);
+            p_roi(roi, fb) = P_mat(1,2); 
+        end
+    end
+end
+
+%% Scatterplots: TODAS las ROIs con correlación significativa (Columnas fijas)
+NumColsFixed = 5; % Fija el número de columnas para todas las figuras
+
+for fb = 1:Nbands
+    dur_mat = squeeze(dur_subj_vox(:, :, fb));
+    pow_mat = squeeze(pow_subj_vox(:, :, fb));
+    
+    % Z-scores
+    dur_z = (dur_mat - mean(dur_mat, 2, 'omitnan')) ./ std(dur_mat, 0, 2, 'omitnan');
+    pow_z = (pow_mat - mean(pow_mat, 2, 'omitnan')) ./ std(pow_mat, 0, 2, 'omitnan');
+    
+    % Filtrar ROIs significativas
     sig_rois = p_roi(:, fb) < 0.05;
     r_band   = r_roi(:, fb);
     r_band(~sig_rois) = NaN;
@@ -1016,21 +1040,25 @@ for fb = 1:Nbands
     abs_r = abs(r_band);
     [~, idx_abs] = sort(abs_r, 'descend', 'MissingPlacement', 'last');
     
-    % Seleccionar el Top N
+    % Seleccionar TODAS las ROIs con correlación significativa
     num_valid = sum(~isnan(r_band));
-    roi_plot = idx_abs(1:min(TopN, num_valid));
+    roi_plot = idx_abs(1:num_valid);
     
     if isempty(roi_plot) || num_valid == 0
         fprintf('Band %s: no significant ROIs\n', freqnames{fb});
         continue
     end
     
-    % Ajustar tamaño de figura para proporciones 2x3 (más ancha que alta)
-    fig = figure('Position', [100 100 1000 550], 'Color', 'w');
+    % Filas dinámicas basadas en columnas fijas
+    num_cols = NumColsFixed;
+    num_rows = ceil(num_valid / num_cols);
     
-    % FORZAR 2 FILAS y las COLUMNAS NECESARIAS (3 si TopN=6)
-    num_cols = ceil(TopN / 2);
-    t = tiledlayout(2, num_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
+    % Ajustar el tamaño de la figura (anchura fija, altura dinámica)
+    fig_width  = 300 * num_cols; 
+    fig_height = 250 * num_rows;
+    fig = figure('Position', [100 100 fig_width fig_height], 'Color', 'w');
+    
+    t = tiledlayout(num_rows, num_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
     title(t, freqnames{fb}, 'FontSize', 14, 'FontWeight', 'bold');
     
     for ri = 1:length(roi_plot)
@@ -1043,11 +1071,7 @@ for fb = 1:Nbands
         y = mean(pow_z(:, voxs), 2, 'omitnan');
         valid = ~isnan(x) & ~isnan(y);
         
-        if r_roi(roi, fb) > 0
-            col = piecols(fb,:);
-        else
-            col = [0.3 0.3 0.8]; 
-        end
+        col = piecols(fb,:);
         
         if p_roi(roi, fb) < 0.001
             pstr = 'p < 0.001';
@@ -1071,14 +1095,19 @@ for fb = 1:Nbands
         clean_title = strrep(aal_label_reduc{roi}, '_', ' ');
         title(clean_title, 'Interpreter', 'none', 'FontSize', 10, 'FontWeight', 'normal');
         
-        xlabel('Duration (Z-score)', 'FontSize', 11);
-        ylabel('Power (Z-score)', 'FontSize', 11);
+        % Etiquetas de ejes en los bordes izquierdo e inferior de la cuadrícula
+        if ri > (num_rows - 1) * num_cols
+            xlabel('Duration (Z)', 'FontSize', 10);
+        end
+        if mod(ri, num_cols) == 1
+            ylabel('Power (Z)', 'FontSize', 10);
+        end
         
         set(gca, 'FontSize', 10, 'Box', 'off', 'TickDir', 'out', 'LineWidth', 1);
         hold off;
     end
     
-    save_path = fullfile(p.figures, sprintf('scatter_top%d_abs_rois_%s.png', TopN, freqnames{fb}));
+    save_path = fullfile(p.figures, sprintf('scatter_all_sig_rois_%s.png', freqnames{fb}));
     exportgraphics(fig, save_path, 'Resolution', 300);
     close(fig);
 end

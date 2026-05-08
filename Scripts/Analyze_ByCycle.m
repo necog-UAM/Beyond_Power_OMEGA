@@ -205,3 +205,36 @@ for fb = 1:Nbands
     saveas(gcf, fullfile(p.figures, ['ptsym_dist_roi_' freqnames{fb} '.png']));
     close;
 end
+
+
+%% Raw values
+raw_group_means = cell(length(freqnames), length(paramlist));
+
+for fb = 1:length(freqnames)
+    frqband = freqnames{fb};
+    
+    load([p.results '\avgshapes_' freqnames{fb}])
+    
+    for param = 1:length(paramlist)
+        tmpdata = squeeze(avgshape(:,:,paramidx(param)));        
+        mean_raw_data = mean(tmpdata, 1, 'omitnan');
+        raw_group_means{fb, param} = mean_raw_data;
+        
+     end
+end
+
+mean_period_alpha = raw_group_means{3,1};
+sBOSC_nii(mean_period_alpha, [p.figures '\mean_period'])
+
+%% Raw values to NIfTI (Frequency in Hz)
+% Define la tasa de muestreo de tus datos limpios (dataclean.fsample)
+fsample = 256; 
+
+% 1. Extraer el periodo crudo de Alpha (Fila 3, Columna 1) en samples
+mean_period_samples = raw_group_means{3, 1};
+
+% 2. Convertir el periodo (samples) a Frecuencia (Hz)
+mean_freq_alpha_hz = fsample ./ mean_period_samples;
+
+% 3. Exportar el mapa cerebral en Hz
+sBOSC_nii(mean_freq_alpha_hz, fullfile(p.figures, 'mean_freq_alpha_hz'));
