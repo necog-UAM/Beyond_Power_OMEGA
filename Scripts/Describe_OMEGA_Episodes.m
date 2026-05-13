@@ -1,4 +1,5 @@
-%% This script loads previously identified episodes with sBOSC with a duration >= 3 cycles and extracts descriptives stats and figures.
+%% This script loads previously identified episodes with sBOSC with a duration >= 3 cycles.
+%% Analyzes: prevalence, duration and power of oscillatory episodes.
 
 %% Paths
 
@@ -167,8 +168,8 @@ for s=1:Nsub
 end
 
 % Store results
-save([p.results '\oscillatory_results_3cycc.mat'], 'osc_global', 'osc_any_freq', 'osc_by_band','osc_by_freq','band_overlap','exclusive_band', 'all_dur_secs_by_band', 'all_dur_cyc_by_band', 'all_pow_by_band')
-load([p.results '\oscillatory_results_3cycc.mat'])
+save([p.results '\oscillatory_results_3cyc.mat'], 'osc_global', 'osc_any_freq', 'osc_by_band','osc_by_freq','band_overlap','exclusive_band', 'all_dur_secs_by_band', 'all_dur_cyc_by_band', 'all_pow_by_band')
+load([p.results '\oscillatory_results_3cyc.mat'])
 
 
 %% Part II. Describe and analyze
