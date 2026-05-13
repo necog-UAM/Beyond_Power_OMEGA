@@ -164,11 +164,7 @@ Nrows = 5;
 piecol = jet_omega_mod;
 piecols = [piecol(1,:); piecol(20,:); piecol(40,:); piecol(55,:); piecol(64,:)];
 aal_label_reduc = {'PreCG', 'SFG', 'SFG (orb)', 'MFG', 'MFG (orb)', 'IFG (oper)', 'IFG (tri)', 'IFG (orb)', 'Rolandic', 'SMA', 'Olfactory', 'SFG (med)', 'SFG (med orb)', 'Rectus', 'Insula', 'ACG', 'MCG', 'PCG', 'Hippoc', 'ParaHippoc', 'Calcarine', 'Cuneus', 'Lingual', 'SOG', 'MOG', 'IOG', 'Fusiform', 'PostCG', 'SPG', 'IPG', 'Supramarg', 'Angular', 'Precuneus', 'ParaCL', 'Heschl', 'STG', 'Temp pole (sup)', 'MTG', 'Temp pole (mid)', 'ITG'};
-aal_label_sort = {'PreCG', 'SFG', 'SFG (orb)', 'MFG', 'MFG (orb)', 'IFG (oper)', 'IFG (orb)',  'IFG (tri)', 'Rolandic', 'PostCG', 'SPG', 'IPG', 'Supramarg', 'Angular', 'PCG', 'ParaCL', 'Hippoc', 'ParaHippoc', 'Temp pole (mid)', 'Temp pole (sup)', 'STG', 'MTG', 'Heschl', 'ITG',  'Precuneus', 'Calcarine', 'Cuneus', 'Lingual', 'SOG', 'MOG', 'IOG', 'Fusiform', 'SMA', 'Olfactory', 'SFG (med)', 'SFG (med orb)', 'Rectus', 'Insula', 'ACG', 'MCG'};
-[~, sorted_aal] = ismember(aal_label_sort, aal_label_reduc);
-aal_label_reduc = aal_label_reduc(sorted_aal);
-rdsym_roi       = rdsym_roi(:,sorted_aal,:);
-ptsym_roi       = ptsym_roi(:,sorted_aal,:);
+aal_label_sort = {'PreCG', 'SFG', 'SFG (orb)', 'MFG', 'MFG (orb)', 'IFG (oper)', 'IFG (orb)',  'IFG (tri)', 'Rolandic', 'PostCG', 'SPG', 'IPG', 'Supramarg', 'Angular', 'PCG', 'ParaCL', 'Hippoc', 'ParaHippoc', 'Temp pole (mid)', 'Temp pole (sup)', 'STG', 'MTG', 'Heschl', 'ITG',  'Precuneus', 'Calcarine', 'Cuneus', 'Lingual', 'SOG', 'MOG', 'IOG', 'Fusiform', 'SMA', 'Olfactory', 'SFG (med)', 'SFG (med orb)', 'Rectus', 'Insula', 
 for fb = 1:Nbands
     figure('Position', [100 100 Ncols*180 Nrows*180], 'Color', 'w');
     tl = tiledlayout(Nrows, Ncols, 'TileSpacing', 'compact', 'Padding', 'tight');

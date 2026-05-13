@@ -185,8 +185,9 @@ load([p.results '\oscillatory_results_3cycc.mat'])
     cfg = [];
     cfg.colmap = slanCM('BuPu');
     cfg.interp = 'linear';
-    cfg.colim = [0 50];
+    cfg.colim = [0 60];
     sBOSC_sourcefig2(mean_osc_any_freq, 'mean_osc_any_freq', cfg)
+    sBOSC_nii(mean_osc_any_freq, [p.figures '\mean_osc_any_freq'])
  
      
 % Frequency bands oscillatory time
@@ -371,7 +372,6 @@ ROI_Table_AnyFreq = table(roi_column, roi_mean_any_freq, roi_std_any_freq, ...
 table_filename_anyfreq = fullfile(p.results, 'ROI_AnyFreq_Percentages.csv');
 writetable(ROI_Table_AnyFreq, table_filename_anyfreq);
 
-
 % Plot voxs inside ROIs
 idx_frontal   = 1:8; 
 idx_parietal  = [9,18, 28:32 34]; 
@@ -499,49 +499,6 @@ for roi = 1:Nroi
     end
 end
 
-%% Boxplots (Individual Figures)
-% Supplementary 1
-save_dir = fullfile(p.figures, 'ROI_Individual_Boxplots');
-if ~exist(save_dir, 'dir')
-    mkdir(save_dir);
-end
-
-for roi = 1:Nroi
-    boxdata = squeeze(rois_z(roi, :, :))'; 
-    
-    % Initialize a new standalone figure for this ROI
-    figure('Name', aal_label_reduc{roi}, 'Position', [100, 100, 600, 450], 'Color', 'w');
-    boxplot(boxdata, 'Symbol', '', 'Widths', 0.75, 'Color', 'k', 'Notch', 'off');
-    h = flipud(findobj(gca, 'Tag', 'Box'));
-    for k = 1:length(h)
-        XData = get(h(k), 'XData');
-        YData = get(h(k), 'YData');    
-        patch(XData, YData, piecols(k,:), 'FaceAlpha', 0.7);    
-        delete(h(k));
-    end
-    
-    % Zero-line indicates the brain average for that frequency
-    hold on;
-    yline(0, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 1); % Slightly thicker for standalone fig
-    
-    title(aal_label_reduc{roi}, 'FontSize', 14, 'Interpreter', 'none', 'FontWeight', 'bold'); 
-    
-    % Since it's not cramped, we can finally label the X-axis with the band names
-    xticklabels(freqnames); 
-    ylabel('Spatial Z-score', 'FontSize', 12);
-    
-    set(gca, 'FontSize', 12, 'YGrid', 'on', 'GridAlpha', 0.3);
-    ylim([-2.5 3.5]);
-    xlim([0.4 5.6]);
-    box off;
-    
-    % Save the figure and close it
-    filename = fullfile(save_dir, sprintf('ROI_%02d_%s.png', roi, aal_label_reduc{roi}));
-    saveas(gcf, filename);
-    close(gcf); 
-end
-
-
 %% Statistics: mean of each area
 region_idx   = {find(vox_frontal), find(vox_parietal), find(vox_temporal), find(vox_occipital), find(vox_medial)};
 region_names = {'Frontal', 'Parietal', 'Temporal', 'Occipital', 'Medial'};
@@ -563,36 +520,20 @@ pair_labels = arrayfun(@(i) sprintf('%s vs %s', freqnames{band_pairs(i,1)}, freq
 T = cell(Nregions, size(band_pairs,1));
 
 for reg = 1:Nregions
-    region_data = squeeze(area_data(:, :, reg)); % [Nsub x Nbands]
-    
-    % Crear tabla con una columna por banda
+    region_data = squeeze(area_data(:, :, reg));   
     T_rm = array2table(region_data, 'VariableNames', freqnames);
-    
-    % Definir el factor within (banda)
+
     within = table(freqnames', 'VariableNames', {'Band'});
     
-    % Modelo de medidas repetidas
+    % Repeated measures
     rm  = fitrm(T_rm, 'delta-highbeta~1', 'WithinDesign', within);
     ranova_out = ranova(rm, 'WithinModel', 'Band');
     disp(region_names{reg})
     disp(ranova_out)
     
-    % Post-hoc: multcompare sobre el objeto rm
+    % Post-hoc
     mc = multcompare(rm, 'Band', 'ComparisonType', 'bonferroni');
-    
-    % Extraer p-valores para la tabla T
-    for pair = 1:size(band_pairs,1)
-        b1 = freqnames{band_pairs(pair,1)};
-        b2 = freqnames{band_pairs(pair,2)};
-        row = (strcmp(mc.Band_1, b1) & strcmp(mc.Band_2, b2)) | ...
-              (strcmp(mc.Band_1, b2) & strcmp(mc.Band_2, b1));
-        p_pair = mc.pValue(row);
-        if     p_pair < 0.001, T{reg,pair} = '***';
-        elseif p_pair < 0.01,  T{reg,pair} = '**';
-        elseif p_pair < 0.05,  T{reg,pair} = '*';
-        else,                  T{reg,pair} = '';
-        end
-    end
+  
 end
 
 %% Boxplot
@@ -604,13 +545,13 @@ letters = 'abcde';
 for reg = 1:Nregions
     region_data = squeeze(area_data(:, :, reg)); % [Nsub x Nbands]
 
-    % Medidas repetidas
+    % Repeated measures
     T_rm  = array2table(region_data, 'VariableNames', freqnames);
     within = table(freqnames', 'VariableNames', {'Band'});
     rm     = fitrm(T_rm, 'delta-highbeta~1', 'WithinDesign', within);
     mc     = multcompare(rm, 'Band', 'ComparisonType', 'bonferroni');
 
-    % Asignar letras según p-valores del multcompare
+    % Multcompare: letters abcde
     letter_label = letters(1:Nbands);
     for pair = 1:size(band_pairs, 1)
         b1 = freqnames{band_pairs(pair,1)};
@@ -685,42 +626,43 @@ grand_dur_cyc_mean = nanmean(mean_dur_cyc_subj, 1);
 grand_dur_cyc_sd = nanstd(mean_dur_cyc_subj, 0, 1);
 
 
-%% rmANOVA duración de episodios (todo el cerebro)
+%% rmANOVA 
 % Figure 4
 T_rm   = array2table(mean_dur_cyc_subj, 'VariableNames', freqnames);
 within = table(freqnames', 'VariableNames', {'Band'});
 rm     = fitrm(T_rm, 'delta-highbeta~1', 'WithinDesign', within);
 
-% Esfericidad
-m = mauchly(rm);
-fprintf('Mauchly: W = %.3f, p = %.4f\n', m.W, m.pValue)
-
 % ANOVA
 ranova_out = ranova(rm, 'WithinModel', 'Band');
 disp(ranova_out)
-
 % Post-hoc
 mc = multcompare(rm, 'Band', 'ComparisonType', 'bonferroni');
-disp(mc)
+t_vals = mc.Difference ./ mc.StdErr;
+p_vals = mc.pValue;
+df = ranova_out.DF(2); 
 
-% Reportar
-fprintf('Duración (ciclos): F(%d,%d) = %.2f, p = %.4f\n', ...
-    ranova_out.DF(3), ranova_out.DF(4), ...
-    ranova_out.F(3), ranova_out.pValue(3))
+% Compute t
+t_vals = mc.Difference ./ mc.StdErr;
+p_vals = mc.pValue;
 
+results_table = table(mc.Band_1, mc.Band_2, t_vals, p_vals, ...
+    'VariableNames', {'Band1', 'Band2', 'tStat', 'pValue'});
+disp(results_table)
+
+% Boxplot
+figure,
+boxplot(mean_dur_cyc_subj, 'Labels', freqnames, 'Colors', 'k', 'Symbol', '.');
+ylabel('Duration (Number of Cycles)');
+set(gca, 'FontSize', 12, 'YGrid', 'on', 'GridAlpha', 0.3);
+box off;
 
 % Histograms
 figure('Name', 'Global Distribution of Burst Durations', 'Position', [100, 100, 1200, 300], 'Color', 'w');
 t = tiledlayout(1, length(freqnames), 'TileSpacing', 'compact');
 
 for fb = 1:length(freqnames)
-    % Extract all cells for this frequency band
     band_cells = all_dur_cyc_by_band(:, :, fb);
-    
-    % Remove empty cells
-    valid_cells = band_cells(~cellfun(@isempty, band_cells));
-    
-    % Flatten to 1D and concatenate 
+    valid_cells = band_cells(~cellfun(@isempty, band_cells));    
     valid_cells = valid_cells(:);
     all_bursts_global = cell2mat(cellfun(@(x) x(:), valid_cells, 'UniformOutput', false));
     
@@ -730,7 +672,7 @@ for fb = 1:length(freqnames)
         'FaceColor', piecols(fb,:), 'EdgeColor', 'none', 'FaceAlpha', 0.8);
     
     title(freqnames{fb}, 'Interpreter', 'none', 'FontSize', 14);
-    xlim([3 10]); % Zoom in on the main distribution (3 to 20 cycles)
+    xlim([3 10]);
     ylim([0 0.6])
     xlabel('Cycles');
     
@@ -745,23 +687,18 @@ figure('Name', 'Global Distribution of Burst Durations', 'Position', [100, 100, 
 t = tiledlayout(1, length(freqnames), 'TileSpacing', 'compact');
 
 for fb = 1:length(freqnames)
-    % Extract all cells for this frequency band
     band_cells = all_dur_secs_by_band(:, :, fb);
-    
-    % Remove empty cells
     valid_cells = band_cells(~cellfun(@isempty, band_cells));
     
-    % Flatten to 1D and concatenate 
     valid_cells = valid_cells(:);
     all_bursts_global = cell2mat(cellfun(@(x) x(:), valid_cells, 'UniformOutput', false));
     
-    % Plot Histogram
     nexttile;
     histogram(all_bursts_global, 'BinWidth', .2, 'Normalization', 'probability', ...
         'FaceColor', piecols(fb,:), 'EdgeColor', 'none', 'FaceAlpha', 0.8);
     
     title(freqnames{fb}, 'Interpreter', 'none', 'FontSize', 14);
-    xlim([0 2]); % Zoom in on the main distribution (3 to 20 cycles)
+    xlim([0 2]);
     ylim([0 0.8])
     xlabel('Seconds');
     
@@ -785,10 +722,8 @@ for fb = 1:length(freqnames)
     valid_cells = valid_cells(:);
     all_bursts_global = cell2mat(cellfun(@(x) x(:), valid_cells, 'UniformOutput', false));
     
-    % Calculate relative frequency directly using histcounts
     [N, ~] = histcounts(all_bursts_global, edges, 'Normalization', 'probability');
     
-    % Plot as a thick line
     plot(bin_centers, N, 'LineWidth', 2.5, 'Color', piecols(fb,:), 'DisplayName', freqnames{fb});
 end
 
@@ -958,7 +893,6 @@ for fb = 1:Nbands
     permTcorr_r = arrayfun(@(t) (sum(maxTval >= t) + 1) / (nperm + 1), abs(t_obs));
     sig_vox(valid_vox, fb) = permTcorr_r < 0.05;
     
-    % --- Cálculo de umbrales de R significativos ---
     r_sig_only = r_vox(:, fb);
     r_sig_only(~sig_vox(:, fb)) = 0; 
     
@@ -968,7 +902,6 @@ for fb = 1:Nbands
     max_r_val = max(r_sig_only(r_sig_only < 0));
     if ~isempty(max_r_val), max_r_thresh(fb) = max_r_val; end
     
-    % --- Cálculo de umbrales de T significativos ---
     t_vox_permcor = zeros(Nvoxin, 1);
     t_vox_permcor(valid_vox) = t_vox(valid_vox, fb);
     t_vox_permcor(~sig_vox(:, fb)) = 0;
@@ -991,7 +924,7 @@ for fb = 1:Nbands
     close all
 end
 
-%% Correlation duration and power (ROI-wise)
+%% Correlation duration and power (ROI)
 Nroi = length(aal_label_reduc);
 r_roi = nan(Nroi, Nbands);
 p_roi = nan(Nroi, Nbands);
@@ -1020,8 +953,8 @@ for fb = 1:Nbands
     end
 end
 
-%% Scatterplots: TODAS las ROIs con correlación significativa (Columnas fijas)
-NumColsFixed = 5; % Fija el número de columnas para todas las figuras
+%% Scatterplots: correlations
+NCols = 5; 
 
 for fb = 1:Nbands
     dur_mat = squeeze(dur_subj_vox(:, :, fb));
@@ -1031,35 +964,26 @@ for fb = 1:Nbands
     dur_z = (dur_mat - mean(dur_mat, 2, 'omitnan')) ./ std(dur_mat, 0, 2, 'omitnan');
     pow_z = (pow_mat - mean(pow_mat, 2, 'omitnan')) ./ std(pow_mat, 0, 2, 'omitnan');
     
-    % Filtrar ROIs significativas
+    % Sig. rois
     sig_rois = p_roi(:, fb) < 0.05;
     r_band   = r_roi(:, fb);
     r_band(~sig_rois) = NaN;
     
-    % Ordenar por valor absoluto
+    % sort
     abs_r = abs(r_band);
     [~, idx_abs] = sort(abs_r, 'descend', 'MissingPlacement', 'last');
     
-    % Seleccionar TODAS las ROIs con correlación significativa
     num_valid = sum(~isnan(r_band));
     roi_plot = idx_abs(1:num_valid);
-    
-    if isempty(roi_plot) || num_valid == 0
-        fprintf('Band %s: no significant ROIs\n', freqnames{fb});
-        continue
-    end
-    
-    % Filas dinámicas basadas en columnas fijas
-    num_cols = NumColsFixed;
+       
+    num_cols = NCols;
     num_rows = ceil(num_valid / num_cols);
     
-    % Ajustar el tamaño de la figura (anchura fija, altura dinámica)
     fig_width  = 300 * num_cols; 
     fig_height = 250 * num_rows;
     fig = figure('Position', [100 100 fig_width fig_height], 'Color', 'w');
     
     t = tiledlayout(num_rows, num_cols, 'TileSpacing', 'compact', 'Padding', 'compact');
-    title(t, freqnames{fb}, 'FontSize', 14, 'FontWeight', 'bold');
     
     for ri = 1:length(roi_plot)
         roi = roi_plot(ri);
@@ -1090,12 +1014,11 @@ for fb = 1:Nbands
         plot(x_line, polyval(p_fit, x_line), 'k-', 'LineWidth', 1.5);
         
         text(0.05, 0.90, sprintf('r = %.2f\n%s', r_roi(roi,fb), pstr), ...
-            'Units', 'normalized', 'FontSize', 11, 'Color', 'k');
+            'Units', 'normalized', 'FontSize', 16, 'Color', 'k');
         
         clean_title = strrep(aal_label_reduc{roi}, '_', ' ');
-        title(clean_title, 'Interpreter', 'none', 'FontSize', 10, 'FontWeight', 'normal');
+        title(clean_title, 'Interpreter', 'none', 'FontSize', 20, 'FontWeight', 'normal');
         
-        % Etiquetas de ejes en los bordes izquierdo e inferior de la cuadrícula
         if ri > (num_rows - 1) * num_cols
             xlabel('Duration (Z)', 'FontSize', 10);
         end
@@ -1103,7 +1026,7 @@ for fb = 1:Nbands
             ylabel('Power (Z)', 'FontSize', 10);
         end
         
-        set(gca, 'FontSize', 10, 'Box', 'off', 'TickDir', 'out', 'LineWidth', 1);
+        set(gca, 'FontSize', 14, 'Box', 'off', 'TickDir', 'out', 'LineWidth', 1);
         hold off;
     end
     
