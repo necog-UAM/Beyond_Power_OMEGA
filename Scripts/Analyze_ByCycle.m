@@ -117,8 +117,7 @@ for fb = 1:length(freqnames)
         cfg.colmap = cmap_no_white;
         cfg.colim = [-10 10];
         cfg.interp = 'linear';
-        cfg.savefig = 'no';
-        sBOSC_sourcefig2(tValspermcor,[p.figures '/' freqnames{fb} '/PermTvals122_' paramlist{param} '_' frqband], cfg)
+        sBOSC_sourcefig(tValspermcor, cfg)
 
         minval = min(tValspermcor(tValspermcor>0));
         if ~isempty(minval)
