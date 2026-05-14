@@ -1,0 +1,285 @@
+%% Waveform analysis
+
+addpath(genpath('Z:\OMEGA\Enrique\OMEGA-Repo\Scripts\'))
+addpath Z:\Toolbox\fieldtrip-20230118
+ft_defaults
+
+rawpath = 'Z:\OMEGA\OMEGA_raw\';
+dpath = 'Z:\OMEGA\OMEGA_data\'
+
+%% Step 0. Subjects
+[Nsub, subs, sess] = Omega_subs(); 
+[source] = Omega_source(1925, 1.5);
+
+frex = exp(0.6:0.1:3.7); % 1.8 Hz to 40 Hz
+Nfrex = length(frex);
+
+[source3423] = Omega_source(3423, 1.5);
+
+voxin = find(ismember(source3423.inside,source.inside));
+Nvoxin = length(voxin);
+
+for s = 1:Nsub
+    disp(['Subject: ' num2str(s) '/' num2str(Nsub)])
+    cd([dpath 'sub-' subs{s} '\ses-' sess{s} '\conepis'])
+    nbepis = ls();
+    for nepis = 1:length(nbepis)-2 % first 2 spaces are empty
+        load(nbepis(nepis+2,:))
+        Epis{nepis} = epis;
+    end
+    epis=Epis; %<--- rewrite better
+    load([dpath 'sub-' subs{s} '\ses-' sess{s} '\datasource_3423.mat'])
+    load([dpath 'sub-' subs{s} '\ses-' sess{s} '\aperiodic_DEF.mat'])
+
+    %% Step 1. Prepare and correct signal
+    cfg = [];
+    cfg.channel = dataclean.label(voxin);
+    evalc('dataclean = ft_preprocessing(cfg, dataclean)');
+    aperiodic = aperiodic(voxin,:);
+
+    if length(dataclean.trial{1})>length(aperiodic)
+        % II. Cut original signal to same length of sim_aperiodic
+        cfg = [];
+        cfg.begsample = 1;
+        cfg.endsample = length(aperiodic);
+        evalc('dataclean = ft_redefinetrial(cfg,dataclean)');
+    else
+        aperiodic = aperiodic(:,1:length(dataclean.trial{1}));
+    end
+
+        % III. Correction to center of the head bias
+        dataclean.trial{1} = dataclean.trial{1} ./ rms(aperiodic,2);
+
+        clear aperiodic
+
+    % % V. Downsample both signals
+    % cfg = [];
+    % cfg.resamplefs = 128;
+    % evalc('dataclean = ft_resampledata(cfg, dataclean)');
+    fsample = dataclean.fsample;
+
+    Nvoxin = length(epis);
+    Nfrex = length(frex);
+    Ntp = size(dataclean.trial{1},2);
+    time = dataclean.time{1};
+
+    episodes = int8(zeros(Nvoxin,Nfrex,Ntp)); % Srate in episodes was 128, so now adapt to 256
+    for v=1:Nvoxin
+        for ep=1:length(epis{v})
+            fm = epis{v}(ep).freq;
+            fbin = dsearchn(frex',fm);
+            tpts = epis{v}(ep).timeps*2;
+            tpts = tpts(1):tpts(end);
+            episodes(v,fbin,tpts) = 1;
+        end
+    end
+
+    voxshape = cell(1, Nvoxin);
+
+    % Voxel loop
+    for vx = 1:Nvoxin
+        try
+            freq_band = [8 12];
+            freq_band_idx = dsearchn(frex',freq_band');
+            epis_idx = find(sum(episodes(vx,freq_band_idx(1):freq_band_idx(2),:),2));
+            data = dataclean.trial{1}(vx,:);
+
+            % Bycycle
+
+            % Filter parameters
+            f_lowpass = 40;
+            n_seconds_filter = .1;
+
+            %% 1. Lowpass filter
+
+            nyquist = fsample / 2;
+            filter_len = round(n_seconds_filter * fsample);
+            cutoff = f_lowpass / nyquist;
+
+            addpath('C:\Program Files\MATLAB\R2024b\toolbox\signal\signal')
+            b = fir1(filter_len, cutoff, 'low', hamming(filter_len + 1)); % lowpass FIR filter
+            data_low = filtfilt(b, 1, data);
+
+            %% 2. Localize peaks and troughs
+            % Narrowband filter signal
+            n_seconds = .75;
+            n_cycles = 3;
+
+            [peaks, troughs] = find_extrema(data_low, fsample, freq_band);
+            [rises, decays] = find_zerox(data_low, peaks, troughs);
+
+            figure, plot(time, data_low)
+            hold on
+            plot(time(peaks), data_low(peaks), 'ro', 'MarkerFaceColor','r')
+            plot(time(troughs), data_low(troughs), 'bo', 'MarkerFaceColor','b')
+            plot(time(rises), data_low(rises), 'yo', 'MarkerFaceColor','y')
+            plot(time(decays), data_low(decays), 'go', 'MarkerFaceColor','g')
+
+            For each cycle, identify the sample of each extrema and zero-crossing
+            samples = [];
+            samples.sample_peak = peaks(2:end);
+            samples.sample_last_zerox_decay = decays(1:end-1);
+            samples.sample_zerox_decay = decays(2:end);
+            samples.sample_zerox_rise = rises;
+            samples.sample_last_trough = troughs(1:end-1);
+            samples.sample_next_trough = troughs(2:end);
+
+            % Compute durations of period, peaks, and troughs
+            period = samples.sample_next_trough - samples.sample_last_trough;
+            time_peak = samples.sample_zerox_decay - samples.sample_zerox_rise;
+            time_trough = samples.sample_zerox_rise - samples.sample_last_zerox_decay;
+
+            % Compute extrema voltage
+            [volt_peak, volt_trough] = compute_extrema_voltage(samples, data_low);
+
+            % Compute rise-decay and peak-trough features and characteristics
+            sym_features = compute_symmetry(samples, data_low, period, time_peak, time_trough);
+
+            ptdiff = (abs(data_low(samples.sample_peak)) - abs(data_low(samples.sample_last_trough)))  ./ (abs(data_low(samples.sample_peak)) + abs(data_low(samples.sample_last_trough))); 
+            ptdiffRMS = (abs(data_low(samples.sample_peak)) - abs(data_low(samples.sample_last_trough))) ./ rms(data_low);
+            ptdiffMAX = (abs(data_low(samples.sample_peak)) - abs(data_low(samples.sample_last_trough)))  ./ max(abs((abs(data_low(samples.sample_peak)) - abs(data_low(samples.sample_last_trough))))); 
+
+            % Compute average oscillatory amplitude estimate during cycle
+            band_amp = compute_band_amp(samples, data_low, fsample, freq_band, n_cycles);
+
+            % Organize shape features into a struct
+            voxshape{vx}.period = period;
+            voxshape{vx}.time_peak = time_peak;
+            voxshape{vx}.time_trough = time_trough;
+            voxshape{vx}.volt_peak = volt_peak;
+            voxshape{vx}.volt_trough = volt_trough;
+            voxshape{vx}.time_decay = sym_features.time_decay;
+            voxshape{vx}.time_rise = sym_features.time_rise;
+            voxshape{vx}.volt_decay = sym_features.volt_decay;
+            voxshape{vx}.volt_rise = sym_features.volt_rise;
+            voxshape{vx}.volt_amp = sym_features.volt_amp;
+            voxshape{vx}.time_rdsym = sym_features.time_rdsym;
+            voxshape{vx}.time_ptsym = sym_features.time_ptsym;
+            voxshape{vx}.band_amp = band_amp;
+            voxshape{vx}.sample_peak = samples.sample_peak;
+            voxshape{vx}.sample_last_zerox_decay = samples.sample_last_zerox_decay;
+            voxshape{vx}.sample_zerox_decay = samples.sample_zerox_decay;
+            voxshape{vx}.sample_zerox_rise = samples.sample_zerox_rise;
+            voxshape{vx}.sample_last_trough = samples.sample_last_trough;
+            voxshape{vx}.sample_next_trough = samples.sample_next_trough;
+            voxshape{vx}.ptdiff = ptdiff;
+            voxshape{vx}.ptdiffMAX = ptdiffMAX;
+            voxshape{vx}.ptdiffRMS = ptdiffRMS;
+
+            %% Filter by epis
+            voxshape{vx}.epis = zeros(size(voxshape{vx}.sample_peak));
+            for it = 1:length(voxshape{vx}.sample_peak)
+                if find(voxshape{vx}.sample_peak(it) == epis_idx)
+                    voxshape{vx}.epis(it) = 1;
+                end
+                if find(voxshape{vx}.sample_last_trough(it) == epis_idx)
+                    voxshape{vx}.epis(it) = 1;
+                end
+                if find(voxshape{vx}.sample_next_trough(it) == epis_idx)
+                    voxshape{vx}.epis(it) = 1;
+                end
+                if find(voxshape{vx}.sample_zerox_decay(it) == epis_idx)
+                    voxshape{vx}.epis(it) = 1;
+                end
+                if find(voxshape{vx}.sample_last_zerox_decay(it) == epis_idx)
+                    voxshape{vx}.epis(it) = 1;
+                end
+                if find(voxshape{vx}.sample_zerox_rise(it) == epis_idx)
+                    voxshape{vx}.epis(it) = 1;
+                end
+            end
+        catch
+        end
+        % Plot epis above data
+            cyclepnts = [];
+            for cp = 1:length(samples.sample_last_trough)
+                cyclepnts{cp} = samples.sample_last_zerox_decay(cp):samples.sample_next_trough(cp); 
+            end
+                % % Plot cycles 
+                figure
+                for cyc = 1:length(cyclepnts)
+                    if length(intersect(cyclepnts{cyc},epis_idx)) / length(cyclepnts{cyc})
+                        plot(time(cyclepnts{cyc}), data_low(cyclepnts{cyc}))
+                        hold on, plot(time(samples.sample_peak(cyc)), data_low(samples.sample_peak(cyc)),'rs', 'MarkerFaceColor','r')
+                        plot(time(samples.sample_last_trough(cyc)), data_low(samples.sample_last_trough(cyc)),'bs', 'MarkerFaceColor','b')
+                        plot(time(samples.sample_next_trough(cyc)), data_low(samples.sample_next_trough(cyc)),'bs', 'MarkerFaceColor','b')
+                        plot(time(samples.sample_zerox_rise(cyc)), data_low(samples.sample_zerox_rise(cyc)),'yo', 'MarkerFaceColor','y')
+                        plot(time(samples.sample_last_zerox_decay(cyc)), data_low(samples.sample_last_zerox_decay(cyc)),'go', 'MarkerFaceColor','g')
+                        plot(time(samples.sample_zerox_decay(cyc)), data_low(samples.sample_zerox_decay(cyc)),'go', 'MarkerFaceColor','g')
+                        title(['RDSYM:' num2str(sym_features.time_rdsym(cyc)) '   PTSYM: ' num2str(sym_features.time_ptsym(cyc))])         
+                        pause
+                        clf
+                    end
+                end
+
+    end
+    save(['Z:\Enrique\Waveform\shape_s_' num2str(s)] , 'voxshape')
+end
+
+
+
+%% Avgs
+avgshape = zeros(Nsub,Nvoxin,23);
+rdsym = cell(Nvoxin,1);
+ptsym = cell(Nvoxin,1);
+period = cell(Nvoxin,1);
+volt = cell(Nvoxin,1);
+ptdiff = cell(Nvoxin,1);
+ptdiffMAX = cell(Nvoxin,1);
+ptdiffRMS = cell(Nvoxin,1);
+for ss = 1:Nsub
+    load(['\\150.244.69.206\nas\Enrique\Waveform\shape_s_' num2str(ss) '.mat'])
+    for vx = 1:length(voxshape)
+        if ~isempty(voxshape{vx})
+            epismask = logical(voxshape{vx}.epis);
+            voxshape{vx}.time_rdsym = abs(0.5-voxshape{vx}.time_rdsym);
+            voxshape{vx}.time_ptsym = abs(0.5-voxshape{vx}.time_ptsym);
+            voxshape{vx}.ptdiffMAX = abs(voxshape{vx}.ptdiffMAX);
+            voxshape{vx}.ptdiffRMS = abs(voxshape{vx}.ptdiffRMS);
+            avgshape(ss,vx,:) = structfun(@(x) median(double(x(epismask)), 'omitmissing'), voxshape{vx});
+        end
+    end
+    ss
+end
+
+save avgshape avgshape
+
+param = 12; % 1: period. 10: volt_amp. 11: rdsym. 12; ptsym
+[p, h, stats] = ranksum(avgshape(:,500,param), avgshape(:,1728,param));
+p
+
+% Plot
+temp = squeeze(mean(avgshape(:,:,param)));
+pBOSC_nii(temp','diff12')
+
+% Hist
+figure
+nbins = 0:.02:1;
+histogram(squeeze(avgshape(:,1357,param)), nbins)
+hold on
+histogram(squeeze(avgshape(:,1728,param)), nbins)
+
+
+
+
+
+
+
+
+
+
+% Average cycle
+fsample = 128;
+dt = 1/fsample;
+
+timerise1357 = mean(avg1357(7,:),2);
+timedecay1357 = mean(avg1357(6,:),2);
+volt_trough1357 = mean(avg1357(5,:),2);
+volt_peak1357 = mean(avg1357(4,:),2);
+
+
+t = linspace(0, T, T*fsample);          % total time vector
+N = length(t);
+N_rise = round(RDS * N);          % samples for rise
+N_decay = N - N_rise;             % samples for decay
+
