@@ -842,7 +842,6 @@ tstat_colmax = zeros(Nbands, length(param_labels));
                 set(gca, 'FontSize', 14, 'Box', 'off', 'TickDir', 'out', 'LineWidth', 1);
                 hold off;   
             end    
-            exportgraphics(fig, fullfile(p.figures, ...
-                sprintf('scatter_sig_rois_%s.png', freqnames{fb})), 'Resolution', 300);
+            exportgraphics(fig, fullfile(p.figures, sprintf('scatter_sig_rois_%s.png', freqnames{fb})), 'Resolution', 300);
             close(fig);
         end
