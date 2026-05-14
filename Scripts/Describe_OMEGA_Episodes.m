@@ -22,18 +22,10 @@ srate = 128;
 sub = [1 2 3 4 5 6 7 8 9 11 12 14 15 16 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 37 39 40 41 42 44 45 46 47 48 49 50 51 52 55 56 57 58 59 60 61 62 63 64 65 67 68 69 70 71 72 73 74 75 76 77 78 79 80 84 85 87 88 89 90 91 92 94 95 96 97 98 99 101 102 103 104 105 106 134 145 146 148 149 150 151 152 154 155 156 157 158 159 160 161 165 166 167 168 169 170 171 175 176 177 179 181 184 185 195 197 200 207 208 210 212]';
 ses = [1 1 1 1 1 1 1 2 1  2  1  2  1  1  1  2  3  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  3  1  2  1  2  1  2  1  1  2  1  1  1  1  1  1  1  1  2  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1  1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1   1 ]';
 
-subs = {} ; sess = {};
-for s = 1:length(sub)
-    if sub(s) < 10
-        subs{s} = ['000' num2str(sub(s))];
-    elseif sub(s) >= 10 & sub(s) < 100
-        subs{s} = ['00' num2str(sub(s))];
-    else
-        subs{s} = ['0' num2str(sub(s))];
-    end
-    sess{s} = ['000' num2str(ses(s))];
-end
-Nsub  = length(sub);
+subs = arrayfun(@(x) sprintf('%04d', x), sub, 'UniformOutput', false);
+sess = arrayfun(@(x) sprintf('%04d', x), ses, 'UniformOutput', false);
+
+nSub  = length(sub);
 
 % Log-spaced frequencies from ~1.8 Hz to ~40 Hz
 frex = exp(0.6:0.1:3.7); % 1.8 Hz to 40 Hz
@@ -48,26 +40,26 @@ nVoxin = length(find(source.inverse.inside));
 
 %% Preallocate
 % Global % of recording time with at least voxel oscillating at any frequency
-osc_global    = zeros(Nsub, 1);
+osc_global    = zeros(nSub, 1);
 % Per voxel, collapsed across all frequencies
-osc_any_freq  = zeros(Nsub, nVoxin);
+osc_any_freq  = zeros(nSub, nVoxin);
 % Per voxel × frequency (up to 33 Hz)
-osc_by_freq   = zeros(Nsub, nVoxin, nFrex - 2);
+osc_by_freq   = zeros(nSub, nVoxin, nFrex - 2);
 % Per voxel × frequency band
-osc_by_band   = zeros(Nsub, nVoxin, nBands);
+osc_by_band   = zeros(nSub, nVoxin, nBands);
 
 % Temporal overlap between band pairs
-band_overlap   = zeros(Nsub, nVoxin, nBands, nBands);
+band_overlap   = zeros(nSub, nVoxin, nBands, nBands);
 % Exclusive oscillation, % time oscillating in one band only
-exclusive_band = zeros(Nsub, nVoxin, nBands);
+exclusive_band = zeros(nSub, nVoxin, nBands);
  
 % Episode properties 
-all_dur_secs_by_band = cell(Nsub, nVoxin, nBands); % Duration in seconds
-all_dur_cyc_by_band  = cell(Nsub, nVoxin, nBands); % Duration in cycles
-all_pow_by_band      = cell(Nsub, nVoxin, nBands); % Mean power per episode
+all_dur_secs_by_band = cell(nSub, nVoxin, nBands); % Duration in seconds
+all_dur_cyc_by_band  = cell(nSub, nVoxin, nBands); % Duration in cycles
+all_pow_by_band      = cell(nSub, nVoxin, nBands); % Mean power per episode
 
 %%  Part I. Extract episode properties
-for s=1:Nsub
+for s=1:nSub
     s
     load([p.data '\sub-' subs{s} '\ses-' sess{s} '\conepis\epis_v1.mat']) % to check size of time points
     nTp = length(datasource.time);
@@ -190,9 +182,8 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
         cfg.colmap = slanCM('BuPu');
         cfg.interp = 'linear';
         cfg.colim = [0 60];
-        sBOSC_sourcefig(mean_osc_any_freq, 'mean_osc_any_freq', cfg)
+        sBOSC_sourcefig(mean_osc_any_freq, cfg)
         sBOSC_nii(mean_osc_any_freq, [p.figures '\mean_osc_any_freq'])
- 
      
 % Prevalence in frequnecy bands
     colmap = {'Blues', 'Greens', 'YlOrBr', 'Oranges', 'Reds'};
@@ -205,7 +196,7 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
                 cfg.colmap = slanCM(colmap{fb});
                 cfg.savefig = 'no';
                 cfg.interp = 'spline';
-                sBOSC_sourcefig(mean_osc_band(:, fb), ['avg_' freqnames{fb} '_osc'], cfg); 
+                sBOSC_sourcefig(mean_osc_band(:, fb), cfg); 
                 sgtitle(['avg_' freqnames{fb} '_osc']);
                 sBOSC_nii(mean_osc_band(:, fb), ['avg_' freqnames{fb} '_osc']);
         end
@@ -306,8 +297,8 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
     Nroi = length(aal_label_reduc);
     
     % Median prevalence per ROI and band
-    rois = zeros(Nroi, length(freqnames), Nsub);
-    roivoxs = zeros(nVoxin, length(freqnames), Nsub);
+    rois = zeros(Nroi, length(freqnames), nSub);
+    roivoxs = zeros(nVoxin, length(freqnames), nSub);
     for roi = 1:Nroi
         for fb = 1:length(freqnames)
         inds = find(label_inside_aal_reduc==roi);
@@ -358,7 +349,7 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
 % ROIs prevalence across frequencies (prevalence per ROI at any freq)
 
     roivoxind = zeros(1,nVoxin);
-    rois_any_freq = zeros(Nroi, Nsub);
+    rois_any_freq = zeros(Nroi, nSub);
     for roi = 1:Nroi
         inds = find(label_inside_aal_reduc==roi);
         voxs = voxel_inside_aal(inds);
@@ -388,16 +379,16 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
 
 % ROI z-scored across voxels
     
-    z_osc_by_band = zeros(Nsub, nVoxin, nBands);
+    z_osc_by_band = zeros(nSub, nVoxin, nBands);
     
-    for s = 1:Nsub
+    for s = 1:nSub
         for fb = 1:nBands
             curr_data = osc_by_band(s, :, fb);
             z_osc_by_band(s, :, fb) = (curr_data - mean(curr_data)) ./ std(curr_data);
         end
     end
     
-    rois_z = zeros(Nroi, nBands, Nsub);
+    rois_z = zeros(Nroi, nBands, nSub);
     
     for roi = 1:Nroi
         inds = find(label_inside_aal_reduc == roi);
@@ -470,7 +461,7 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
 
         for ar = 1:length(area_names)
             name = area_names{ar};
-            sBOSC_sourcefig(area_masks.(name), fullfile(p.figures, ['plotvoxs_' name]), cfg);        
+            sBOSC_sourcefig(area_masks.(name), cfg);        
         end
 
 
@@ -480,7 +471,7 @@ load(fullfile(p.results, 'oscillatory_results_3cyc.mat'))
 area_idx   = {find(vox_frontal), find(vox_parietal), find(vox_temporal), find(vox_occipital), find(vox_medial)};
 area_names = {'Frontal', 'Parietal', 'Temporal', 'Occipital', 'Medial'};
 nAreas     = length(area_names);
-area_data = nan(Nsub, nBands, nAreas);
+area_data = nan(nSub, nBands, nAreas);
 for ar = 1:nAreas
     voxs = area_idx{ar};
     for fb = 1:nBands
@@ -551,10 +542,10 @@ end
 
 %% Episode duration
 
-    mean_dur_cyc_subj = nan(Nsub, Nbands);
-    mean_dur_sec_subj = nan(Nsub, Nbands);
+    mean_dur_cyc_subj = nan(nSub, Nbands);
+    mean_dur_sec_subj = nan(nSub, Nbands);
      
-    for s = 1:Nsub
+    for s = 1:nSub
         for fb = 1:Nbands
      
             cyc_cells = all_dur_cyc_by_band(s, :, fb);
@@ -643,10 +634,10 @@ end
 
 %% Duration and Power
 
-dur_subj_vox = nan(Nsub, Nvoxin, Nbands);
-pow_subj_vox = nan(Nsub, Nvoxin, Nbands);
+dur_subj_vox = nan(nSub, Nvoxin, Nbands);
+pow_subj_vox = nan(nSub, Nvoxin, Nbands);
  
-for s = 1:Nsub
+for s = 1:nSub
     for vx = 1:Nvoxin
         for fb = 1:Nbands
             cyc_vals = all_dur_cyc_by_band{s, vx, fb};
@@ -691,7 +682,7 @@ tstat_colmax = zeros(Nbands, length(param_labels));
             % Max-statistic permutation distribution
             maxT_perm = zeros(nperm, 1);
             for pp = 1:nperm
-                permsign        = (rand(Nsub, 1) > 0.5) * 2 - 1;
+                permsign        = (rand(nSub, 1) > 0.5) * 2 - 1;
                 [~,~,~, pstats] = arrayfun(@(v) ttest(zData(:, v) .* permsign, 0), 1:Nvoxin, 'UniformOutput', false);
                 maxT_perm(pp)   = max(abs(cellfun(@(s) s.tstat, pstats)));
             end   
@@ -711,7 +702,7 @@ tstat_colmax = zeros(Nbands, length(param_labels));
             cfg.colim   = [-10 10];
             cfg.interp  = 'linear';
             cfg.savefig = 'no';
-            sBOSC_sourcefig(tVals_thresh, fullfile(p.figures, [freqnames{fb} '_perm_' param_labels{param}]), cfg);
+            sBOSC_sourcefig(tVals_thresh, cfg);
             close all;
         end
     end
@@ -752,7 +743,7 @@ tstat_colmax = zeros(Nbands, length(param_labels));
         % Max-statistic permutation 
         maxT_perm = zeros(nperm, 1);
         for pp = 1:nperm
-            permsign    = (rand(Nsub, 1) > 0.5) * 2 - 1;
+            permsign    = (rand(nSub, 1) > 0.5) * 2 - 1;
             dur_perm    = dur_c .* permsign;
             num_p       = sum(dur_perm .* pow_c, 1);
             denom_p     = sqrt(sum(dur_perm.^2, 1) .* sum(pow_c.^2, 1));
@@ -779,7 +770,7 @@ tstat_colmax = zeros(Nbands, length(param_labels));
         cfg.colim   = [-0.8 0.8];
         cfg.interp  = 'linear';
         cfg.savefig = 'no';
-        sBOSC_sourcefig(r_masked, fullfile(p.figures, ['corr_dur_pow_' freqnames{fb}]), cfg);
+        sBOSC_sourcefig(r_masked, cfg);
         close all;
     end
 
