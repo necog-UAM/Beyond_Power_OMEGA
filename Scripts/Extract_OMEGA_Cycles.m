@@ -251,7 +251,6 @@ for s = 1:nSub
                 % clf
                 % end
 
-
             % Store all metrics of individual cycles
             voxshape{vx}.time_peak = time_peak(cycleidx);
             voxshape{vx}.time_trough = time_trough(cycleidx);

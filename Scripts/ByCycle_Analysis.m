@@ -181,7 +181,7 @@ for fb = 1:Nbands
             'EdgeColor', 'none', 'FaceAlpha', 0.7, 'Normalization', 'probability');
         hold on;
         xline(median(x(valid), 'omitnan'), 'k-', 'LineWidth', 1.5);
-        xline(0.5, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);  % 0.5 = symmetry
+        xline(0.5, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);
         title(aal_label_reduc{roi}, 'Interpreter', 'none', 'FontSize', 10);
         set(gca, 'FontSize', 2.5, 'Box', 'off', 'TickDir', 'out');
         xlim([0.15 0.35])
@@ -190,12 +190,10 @@ for fb = 1:Nbands
 
         fig = gcf;
     fig.Units = 'centimeters';
-    fig.Position(3) = 9;    % width = 9 cm
-    fig.Position(4) = 5;    % adjust height proportionally
+    fig.Position(3) = 9;   
+    fig.Position(4) = 5; 
 
-    exportgraphics(fig, fullfile(p.figures, ['rdsym_dist_roi_' freqnames{fb} '.png']), ...
-        'Resolution', 300);
-
+    exportgraphics(fig, fullfile(p.figures, ['rdsym_dist_roi_' freqnames{fb} '.png']), 'Resolution', 300);
     close;
 
     % Same for ptsym
@@ -220,12 +218,10 @@ for fb = 1:Nbands
 
     fig = gcf;
     fig.Units = 'centimeters';
-    fig.Position(3) = 9;    % width = 9 cm
-    fig.Position(4) = 5;    % adjust height proportionally
+    fig.Position(3) = 9; 
+    fig.Position(4) = 5; 
 
-    exportgraphics(fig, fullfile(p.figures, ['ptsym_dist_roi_' freqnames{fb} '.png']), ...
-        'Resolution', 300);
-
+    exportgraphics(fig, fullfile(p.figures, ['ptsym_dist_roi_' freqnames{fb} '.png']),'Resolution', 300);
     close;
 end
 
@@ -242,14 +238,13 @@ for fb = 1:length(freqnames)
         tmpdata = squeeze(avgshape(:,:,paramidx(param)));        
         mean_raw_data = mean(tmpdata, 1, 'omitnan');
         raw_group_means{fb, param} = mean_raw_data;
-        
      end
 end
 
 mean_period_alpha = raw_group_means{3,1};
 sBOSC_nii(mean_period_alpha, [p.figures '\mean_period'])
 
-%% Raw values to NIfTI (Frequency in Hz)
+%% Raw values to NIfTI
 fsample = 256; 
 mean_period_samples = raw_group_means{3, 1};
 mean_freq_alpha_hz = fsample ./ mean_period_samples;
