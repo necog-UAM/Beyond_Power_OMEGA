@@ -14,6 +14,7 @@ function [rises, decays] = find_zerox(sig, peaks, troughs)
     decays = find_flank_midpoints(sig, 'decay', n_decays, peaks, troughs, idx_bias);
 end
 
+%% Local function
 function flanks = find_flank_midpoints(sig, flank, n_flanks, extrema_start, extrema_end, idx_bias)
     if strcmp(flank, 'rise')
         idx_bias = -idx_bias + 1;
@@ -27,15 +28,14 @@ function flanks = find_flank_midpoints(sig, flank, n_flanks, extrema_start, extr
         i_start = extrema_start(idx);
         i_end = extrema_end(idx + idx_bias);
 
-        % Add +1 to i_end to match Python slicing 
-        sig_temp = sig(i_start:i_end+1);
+        sig_temp = sig(i_start:i_end);
 
         if sum(abs(sig_temp)) == 0 || comp(sig_temp(1), sig_temp(end))
             flanks(idx) = i_start + floor(length(sig_temp)/2);
         else
             midpoint = (sig_temp(1) + sig_temp(end)) / 2;
             zc = find_flank_zerox(sig_temp, flank, midpoint);
-            flanks(idx) = i_start + floor(median(zc));
+            flanks(idx) = i_start + floor(median(zc)) -1;
         end
     end
 end
@@ -56,6 +56,6 @@ function zero_xs = find_flank_zerox(sig, flank, midpoint)
     zero_xs = find(pos(1:end-1) & ~pos(2:end));
 
     if isempty(zero_xs)
-        zero_xs = floor(length(sig)/2);
+        zero_xs = floor(length(sig)/2) +1;
     end
 end

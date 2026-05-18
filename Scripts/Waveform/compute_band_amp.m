@@ -1,46 +1,71 @@
 function band_amp = compute_band_amp(df_samples, sig, fs, f_range, n_cycles)
-    % compute_band_amp Compute the average amplitude of each oscillation.
-    %
-    % Parameters
-    % ----------
-    % sig : 1d array
-    %     Time series.
-    % fs : float
-    %     Sampling rate, in Hz.
-    % f_range : 2-element vector
-    %     Frequency range for narrowband signal of interest (Hz).
-    % n_cycles : int, optional, default: 3
-    %     Length of filter, in number of cycles, at the lower cutoff frequency.
-    %
-    % Returns
-    % -------
-    % band_amp : 1d array
-    %     Average analytic amplitude of the oscillation.
-    %
-    % Example:
-    % fs = 500;
-    % sig = sim_bursty_oscillation(10, fs, 10); % Assuming similar function exists
-    % df_samples = compute_cyclepoints(sig, fs, [8 12]);
-    % band_amp = compute_band_amp(df_samples, sig, fs, [8 12]);
+% COMPUTE_BAND_AMP  Compute mean band amplitude within each oscillatory cycle.
+%
+%   BAND_AMP = COMPUTE_BAND_AMP(DF_SAMPLES, SIG, FS, F_RANGE) returns the
+%   mean instantaneous amplitude of the narrowband signal within each cycle
+%   window, defined as the interval between consecutive troughs.
+%
+%   Inputs:
+%       df_samples - Struct with fields:
+%                       sample_peak         : peak sample indices
+%                       sample_last_trough  : preceding trough per cycle
+%                       sample_next_trough  : following trough per cycle
+%       sig        - Time series (numeric vector)
+%       fs         - Sampling rate (Hz)
+%       f_range    - Frequency range [f_lo f_hi] (Hz) for bandpass filter
+%       n_cycles   - Filter length in cycles at f_lo (default: 3)
+%
+%   Output:
+%       band_amp   - Mean analytic amplitude per cycle [n_cycles x 1]
 
-    if nargin < 5
-        n_cycles = 3;
+if nargin < 5 || isempty(n_cycles)
+    n_cycles = 3;
+end
+
+% Compute instantaneous amplitude across the full signal.
+amp = amp_by_time(sig, fs, f_range, false, n_cycles);
+
+% Construct a trough index vector
+troughs  = [df_samples.sample_last_trough(1); df_samples.sample_next_trough(:)];
+n_cycles_out = length(df_samples.sample_peak);
+band_amp = zeros(n_cycles_out, 1);
+
+for c = 1:n_cycles_out
+    band_amp(c) = mean(amp(troughs(c) : troughs(c + 1) -1));
+end
+
+end
+
+
+%%
+
+function amp = amp_by_time(sig, fs, f_range, remove_edges, n_cycles)
+% AMP_BY_TIME  Compute instantaneous amplitude of a narrowband signal.
+
+if nargin < 4 || isempty(remove_edges), remove_edges = true; end
+if nargin < 5 || isempty(n_cycles), n_cycles = 3;    end
+
+%  Bandpass filter
+if ~isempty(f_range)
+    % Filter length
+    filt_len = ceil(n_cycles * fs / f_range(1));
+    if mod(filt_len, 2) == 0
+        filt_len = filt_len + 1;
     end
+    b = fir1(filt_len - 1, f_range / (fs / 2), 'bandpass', hamming(filt_len));
+    sig_filt = filtfilt(b, 1, sig);
+else
+    sig_filt = sig;
+    filt_len = 1;
+end
 
-    amp = amp_by_time(sig, fs, f_range, false, n_cycles);
+%  Instantaneous amplitude via Hilbert transform
+amp = abs(hilbert(sig_filt));
 
-
-    % Construct troughs vector
-    troughs = [df_samples.sample_last_trough(1); df_samples.sample_next_trough];
-
-    band_amp = zeros(length(df_samples.sample_peak), 1);
-    for sig_idx = 1:length(df_samples.sample_peak)
-        band_amp(sig_idx) = mean(amp(troughs(sig_idx) : troughs(sig_idx + 1)));
-    end
-
-    % figure, plot(sig(df_samples.sample_last_trough(sig_idx):df_samples.sample_next_trough(sig_idx)))
-    % hold on
-    % plot(amp(df_samples.sample_last_trough(sig_idx):df_samples.sample_next_trough(sig_idx)))
-    % 
+if remove_edges && filt_len > 1
+    half_len          = floor(filt_len / 2);
+    amp(1:half_len)   = NaN;
+    amp(end - half_len + 1 : end) = NaN;
+end
 
 end

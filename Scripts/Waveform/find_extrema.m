@@ -1,192 +1,176 @@
-function [peaks, troughs] = find_extrema(sig, fs, f_range, boundary, first_extrema, filter_kwargs, pass_type, pad)
-% Identify peaks and troughs in a time series.
+function [peaks, troughs] = find_extrema(sig, fs, f_range, boundary, first_extrema, filter_opts, pass_type, pad)
+% FIND_EXTREMA  Identify peaks and troughs in a time series.
 %
-% MATLAB port of bycycle.cyclepoints.find_extrema (Python)
+%   [PEAKS, TROUGHS] = FIND_EXTREMA(SIG, FS, F_RANGE) returns sample
+%   indices of peaks and troughs in SIG after narrowband filtering within
+%   F_RANGE.
 %
-% Parameters
-%  sig : vector
-%    Time series.
-%  fs : scalar
-%    Sampling rate, in Hz.
-%  f_range : 1x2 vector
-%    Frequency range, in Hz, to narrowband filter the signal.
-%  boundary : scalar, optional (default = 0)
-%    Number of samples from edge of the signal to ignore.
-%  first_extrema : 'peak', 'trough', or []
-%    Force output to begin with a peak or trough or nothing.
-%  filter_kwargs : struct, optional
-%    Filter parameters. Fields: n_cycles (default 3), n_seconds (optional).
-%  pass_type : string, optional (default 'bandpass')
-%    Filter type.
-%  pad : logical, optional (default true)
-%    Whether to pad signal to prevent missed cyclepoints at edges.
+%   Inputs:
+%       sig           - Time series (vector)
+%       fs            - Sampling rate (Hz)
+%       f_range       - Frequency range [f_lo f_hi] (Hz)
+%       boundary      - Samples to ignore at signal edges (default: 0)
+%       first_extrema - Force output to begin with 'peak', 'trough', or ''
+%                       (default: 'peak')
+%       filter_opts - Struct with optional fields:
+%                           n_cycles  (default: 3)
+%                           n_seconds (overrides n_cycles if set)
+%       pass_type     - Filter type string (default: 'bandpass')
+%       pad           - Logical; pad signal edges to reduce edge artefacts
+%                       (default: true)
 %
-% Returns
-%  peaks : indices of peaks in sig
-%  troughs : indices of troughs in sig
-%
+%   Outputs:
+%       peaks   - Sample indices of peaks in sig
+%       troughs - Sample indices of troughs in sig
 
-% --- INPUT PARSING & DEFAULTS ---
+
+%  Input validation and defaults
 if nargin < 3
-    error('At least sig, fs, and f_range are required.');
+    error('find_extrema:insufficientInputs', 'At least sig, fs, and f_range are required.');
 end
-if nargin < 4 || isempty(boundary)
-    boundary = 0;
-end
-if nargin < 5 || isempty(first_extrema)
-    first_extrema = 'peak';
-end
-valid_first = {'peak','trough',''};
-if ~ismember(first_extrema, valid_first)
-    error('first_extrema must be ''peak'', ''trough'', or empty.');
-end
-if nargin < 6 || isempty(filter_kwargs)
-    filter_kwargs = struct();
-end
-if ~isfield(filter_kwargs, 'n_cycles')
-    filter_kwargs.n_cycles = 3;
-end
-if nargin < 7 || isempty(pass_type)
-    pass_type = 'bandpass';
-end
-if nargin < 8 || isempty(pad)
-    pad = true;
-end
+if nargin < 4 || isempty(boundary),      boundary      = 0;          end
+if nargin < 5 || isempty(first_extrema), first_extrema = 'peak';     end
+if nargin < 6 || isempty(filter_opts), filter_opts = struct();    end
+if nargin < 7 || isempty(pass_type),     pass_type     = 'bandpass'; end
+if nargin < 8 || isempty(pad),           pad           = true;        end
 
-% --- Validate inputs ---
+if ~ismember(first_extrema, {'peak', 'trough', ''})
+    error('find_extrema:invalidInput', 'first_extrema must be ''peak'', ''trough'', or ''''.');
+end
 if ~isvector(sig)
-    error('sig must be a vector.');
+    error('find_extrema:invalidInput', 'sig must be a vector.');
 end
-sig = sig(:); % ensure column vector
-
 if ~isscalar(fs) || fs <= 0
-    error('fs must be a positive scalar.');
+    error('find_extrema:invalidInput', 'fs must be a positive scalar.');
 end
-
 if ~isvector(f_range) || numel(f_range) ~= 2 || any(f_range <= 0)
-    error('f_range must be a 1x2 vector of positive values.');
+    error('find_extrema:invalidInput', 'f_range must be a 2-element vector of positive values.');
 end
+if ~isfield(filter_opts, 'n_cycles'),  filter_opts.n_cycles  = 3;   end
+if ~isfield(filter_opts, 'n_seconds'), filter_opts.n_seconds = [];  end
 
-% --- Prepare for filtering ---
+sig     = sig(:);   
 sig_len = length(sig);
-filt_len = 0;
 
+%  Compute filter length 
+filt_len = compute_filter_length(fs, pass_type, f_range(1), f_range(2), filter_opts.n_cycles, filter_opts.n_seconds);
+
+%  Pad signal
 if pad
-    n_seconds = [];
-    if isfield(filter_kwargs, 'n_seconds')
-        n_seconds = filter_kwargs.n_seconds;
-    end
-    n_cycles = [];
-    if isfield(filter_kwargs, 'n_cycles')
-        n_cycles = filter_kwargs.n_cycles;
-    end
-    filt_len = compute_filter_length(fs, pass_type, f_range(1), f_range(2), n_cycles, n_seconds);
-    pad_size = ceil(filt_len/2);
-    sig = [zeros(pad_size,1); sig; zeros(pad_size,1)];
+    pad_size = ceil(filt_len / 2);
+    sig      = [zeros(pad_size, 1); sig; zeros(pad_size, 1)];
 end
 
-% --- Narrowband filter ---
-b = fir1(filt_len-1, f_range / (fs/2), 'bandpass', hamming(filt_len));
-sig_filt = filtfilt(b, 1, sig); % zero-phase FIR filtering
+%  Narrowband filter
+b        = fir1(filt_len - 1, f_range / (fs / 2), 'bandpass', hamming(filt_len));
+sig_filt = filtfilt(b, 1, sig);
 
-% --- Find zero-crossings ---
-rise_xs = find_flank_zerox(sig_filt, 'rise');
+
+%  Find zero-crossings on rising and decaying flanks
+rise_xs  = find_flank_zerox(sig_filt, 'rise');
 decay_xs = find_flank_zerox(sig_filt, 'decay');
 
-% --- Compute number of peaks and troughs ---
+%  Determine number of peaks and troughs
 if rise_xs(end) > decay_xs(end)
-    n_peaks = length(rise_xs) - 1;
+    n_peaks   = length(rise_xs) - 1;
     n_troughs = length(decay_xs);
 else
-    n_peaks = length(rise_xs);
+    n_peaks   = length(rise_xs);
     n_troughs = length(decay_xs) - 1;
 end
 
-% --- Calculate peak samples ---
-peaks = zeros(n_peaks,1);
-decay_xs2 = decay_xs;
+%  Locate peak samples
+peaks = zeros(n_peaks, 1);
 for p_idx = 1:n_peaks
-    last_rise = rise_xs(p_idx);
-    idx = find(decay_xs2 > last_rise, 1, 'first');
-    if isempty(idx)
-        continue
-    end
-    decay_xs2 = decay_xs2(idx:end);
-    next_decay = decay_xs2(1);
-    [~, max_idx] = max(sig(last_rise:next_decay));
-    peaks(p_idx) = max_idx - 1 + last_rise;
+    last_rise      = rise_xs(p_idx);
+    next_decay_idx = find(decay_xs > last_rise, 1, 'first');
+    if isempty(next_decay_idx), continue; end
+    next_decay     = decay_xs(next_decay_idx);
+    [~, max_idx]   = max(sig(last_rise:next_decay-1));
+    peaks(p_idx)   = last_rise + max_idx - 1;
 end
 
-% --- Calculate trough samples ---
-troughs = zeros(n_troughs,1);
-rise_xs2 = rise_xs;
+%  Locate trough samples
+troughs = zeros(n_troughs, 1);
 for t_idx = 1:n_troughs
-    last_decay = decay_xs(t_idx);
-    idx = find(rise_xs2 > last_decay, 1, 'first');
-    if isempty(idx)
-        continue
-    end
-    rise_xs2 = rise_xs2(idx:end);
-    next_rise = rise_xs2(1);
-    [~, min_idx] = min(sig(last_decay:next_rise));
-    troughs(t_idx) = min_idx - 1 + last_decay;
+    last_decay    = decay_xs(t_idx);
+    next_rise_idx = find(rise_xs > last_decay, 1, 'first');
+    if isempty(next_rise_idx), continue; end
+    next_rise     = rise_xs(next_rise_idx);
+    [~, min_idx]  = min(sig(last_decay:next_rise-1));
+    troughs(t_idx) = last_decay + min_idx - 1;
 end
 
-% --- Remove padding ---
-peaks = peaks - ceil(filt_len/2);
-troughs = troughs - ceil(filt_len/2);
+%  Remove padding offset and boundary samples
+if pad
+    peaks = peaks - ceil(filt_len / 2);
+    troughs = troughs - ceil(filt_len / 2);
+end
+peaks   = peaks(peaks   > boundary & peaks   <= sig_len - boundary);
+troughs = troughs(troughs > boundary & troughs <= sig_len - boundary);
 
-% --- Remove indices outside boundary ---
-peaks = peaks(peaks > boundary & peaks < sig_len - boundary);
-troughs = troughs(troughs > boundary & troughs < sig_len - boundary);
 
-% --- Force first extrema if requested ---
+%  Force first extrema type
 if strcmp(first_extrema, 'peak')
-    if ~isempty(troughs) && ~isempty(peaks)
-        if peaks(1) > troughs(1)
-            troughs(1) = [];
-        end
-        if peaks(end) > troughs(end)
-            peaks(end) = [];
-        end
+    if ~isempty(peaks) && ~isempty(troughs)
+        if peaks(1)   > troughs(1),   troughs(1)   = []; end
+        if peaks(end) > troughs(end), peaks(end)   = []; end
     end
 elseif strcmp(first_extrema, 'trough')
-    if ~isempty(troughs) && ~isempty(peaks)
-        if troughs(1) > peaks(1)
-            peaks(1) = [];
-        end
-        if troughs(end) > peaks(end)
-            troughs(end) = [];
-        end
+    if ~isempty(peaks) && ~isempty(troughs)
+        if troughs(1)   > peaks(1),   peaks(1)     = []; end
+        if troughs(end) > peaks(end), troughs(end) = []; end
     end
-elseif isempty(first_extrema) || strcmp(first_extrema, '')
-    % do nothing
-else
-    error('Parameter "first_extrema" is invalid');
+end
 end
 
-end
 
-%% Helper function
+
+%% Local functions
 function filt_len = compute_filter_length(fs, pass_type, f_lo, f_hi, n_cycles, n_seconds)
-    if ~isempty(n_cycles) && ~isempty(n_seconds)
-        error('Either `n_cycles` or `n_seconds` can be defined, but not both.');
-    end
-
-    if ~isempty(n_seconds)
-        filt_len = fs * n_seconds;
-    elseif ~isempty(n_cycles)
-        if strcmp(pass_type, 'lowpass')
-            filt_len = fs * n_cycles / f_hi;
-        else
-            filt_len = fs * n_cycles / f_lo;
-        end
+if ~isempty(n_cycles) && ~isempty(n_seconds)
+    error('compute_filter_length:ambiguousInput', 'Specify either n_cycles or n_seconds.');
+end
+if ~isempty(n_seconds)
+    filt_len = round(fs * n_seconds);
+elseif ~isempty(n_cycles)
+    if strcmp(pass_type, 'lowpass')
+        filt_len = ceil(fs * n_cycles / f_hi);
     else
-        error('Either `n_cycles` or `n_seconds` needs to be defined.');
+        filt_len = ceil(fs * n_cycles / f_lo);
     end
+else
+    error('compute_filter_length:missingInput', 'Either n_cycles or n_seconds must be specified.');
+end
+% Force odd length
+if mod(filt_len, 2) == 0
+    filt_len = filt_len + 1;
+end
+end
 
-    filt_len = ceil(filt_len);
-    if mod(filt_len, 2) == 0
-        filt_len = filt_len + 1;
-    end
+
+
+%%
+
+function zero_xs = find_flank_zerox(sig, flank, midpoint)
+
+if nargin < 3 || isempty(midpoint)
+    midpoint = 0;
+end
+if ~ismember(flank, {'rise', 'decay'})
+    error('find_flank_zerox:invalidInput', ...
+        'flank must be ''rise'' or ''decay''.');
+end
+if strcmp(flank, 'rise')
+    pos = sig <= midpoint;   
+else
+    pos = sig >  midpoint;  
+end
+
+zero_xs = find(pos(1:end-1) & ~pos(2:end));
+
+if isempty(zero_xs)
+    zero_xs = floor(length(sig) / 2) + 1;
+end
+
 end
