@@ -2,15 +2,19 @@
 
 %% Paths
 
-p.data = 'Z:\OMEGA\OMEGA_data';
-p.results = 'Z:\Enrique\Waveform\Results';
+% directory to OMEGA episodes, extracted with sBOSC.
+% Stern, Enrique; Niso, Guiomar; Capilla, Almudena, 2026, "Oscillatory episodes of brain activity derived from the OMEGA dataset", https://doi.org/10.21950/MJYPXG, e-cienciaDatos, V1 
+p.data = 'Z:\OMEGA\OMEGA_data'; % 
+
+p.bycycle = 'Z:\Enrique\Descriptives\Results\ByCycle'; % folder to save the results of Bycycle
+p.files = 'Z:\Enrique\Descriptives\Files';
 
 % Toolbox paths
 addpath('Z:\Toolbox\fieldtrip-20230118') % Path to Fieldtrip
-addpath('Z:\Toolbox\NECOG')
 ft_defaults
 
-addpath(genpath('Z:\Toolbox\sourceBOSC'))
+addpath(p.files) % source templates
+addpath('Z:\Enrique\Descriptives\Scripts\ByCycle') % ByCycle functions
 
 
 %% OMEGA 
@@ -38,12 +42,6 @@ s1925 = load('source_template_10mm_1925.mat', 'source');
 voxin = s1925.source.inverse.inside(s3423.source.inverse.inside);
 nVox  = nnz(s1925.source.inverse.inside);
 
-% Make folders
-for fb = 1:nBands
-    outdir = fullfile(p.results, 'Waveform', freqnames{fb});
-    if ~exist(outdir, 'dir'), mkdir(outdir); end
-end
-
 % Filter parameters
 n_seconds_filter = .1;
 n_cycles = 3;
@@ -51,7 +49,6 @@ addpath('C:\Program Files\MATLAB\R2024b\toolbox\signal\signal')
 
 
 %% Apply bycyle
-    ct=1;
 for s = 1:nSub
     fprintf('\nSubject:  %d / %d\n\n', s, nSub)
    
@@ -116,33 +113,33 @@ for s = 1:nSub
         b  = fir1(filter_len, cutoff, 'low', hamming(filter_len + 1));
  
         % Preallocate
-        voxshape = cell(1, nVox);
-        cycles = cell(1, nVox);
-        timecycles = cell(1, nVox);
+        cycle_features = cell(1, nVox);
+        cycle_waveforms = cell(1, nVox);
+        cycle_samples = cell(1, nVox);
 
 
         %% Voxel loop
         for vx = 1:nVox
             % Organize shape features into a struct
-            voxshape{vx}.time_peak = [];
-            voxshape{vx}.time_trough = [];
-            voxshape{vx}.volt_peak = [];
-            voxshape{vx}.volt_trough = [];
-            voxshape{vx}.time_decay = [];
-            voxshape{vx}.time_rise = [];
-            voxshape{vx}.volt_decay = [];
-            voxshape{vx}.volt_rise = [];
-            voxshape{vx}.sample_peak = [];
-            voxshape{vx}.sample_last_zerox_decay = [];
-            voxshape{vx}.sample_zerox_decay = [];
-            voxshape{vx}.sample_zerox_rise = [];
-            voxshape{vx}.sample_last_trough = [];
-            voxshape{vx}.sample_next_trough = [];
-            voxshape{vx}.volt_amp = [];
-            voxshape{vx}.band_amp = [];
-            voxshape{vx}.period = [];
-            voxshape{vx}.time_rdsym = [];
-            voxshape{vx}.time_ptsym = [];
+            cycle_features{vx}.time_peak = [];
+            cycle_features{vx}.time_trough = [];
+            cycle_features{vx}.volt_peak = [];
+            cycle_features{vx}.volt_trough = [];
+            cycle_features{vx}.time_decay = [];
+            cycle_features{vx}.time_rise = [];
+            cycle_features{vx}.volt_decay = [];
+            cycle_features{vx}.volt_rise = [];
+            cycle_features{vx}.sample_peak = [];
+            cycle_features{vx}.sample_last_zerox_decay = [];
+            cycle_features{vx}.sample_zerox_decay = [];
+            cycle_features{vx}.sample_zerox_rise = [];
+            cycle_features{vx}.sample_last_trough = [];
+            cycle_features{vx}.sample_next_trough = [];
+            cycle_features{vx}.volt_amp = [];
+            cycle_features{vx}.band_amp = [];
+            cycle_features{vx}.period = [];
+            cycle_features{vx}.time_rdsym = [];
+            cycle_features{vx}.time_ptsym = [];
 
             epis_idx = squeeze(sum(episodes(vx, freq_band_idx(1):freq_band_idx(end), :), 2)) > 0;
             if ~any(epis_idx), continue; end
@@ -164,7 +161,6 @@ for s = 1:nSub
             % hold on, plot(dataclean.time{1}, data_low, 'Linewidth',3)
 
             %% Localize peaks and troughs
-
 
             [peaks, troughs] = find_extrema(data_low, fsample, fband);
                 if length(peaks) ~= length(troughs), continue; end
@@ -252,34 +248,34 @@ for s = 1:nSub
                 % end
 
             % Store all metrics of individual cycles
-            voxshape{vx}.time_peak = time_peak(cycleidx);
-            voxshape{vx}.time_trough = time_trough(cycleidx);
-            voxshape{vx}.volt_peak = volt_peak(cycleidx);
-            voxshape{vx}.volt_trough = volt_trough(cycleidx);
-            voxshape{vx}.time_decay = sym_features.time_decay(cycleidx);
-            voxshape{vx}.time_rise = sym_features.time_rise(cycleidx);
-            voxshape{vx}.volt_decay = sym_features.volt_decay(cycleidx);
-            voxshape{vx}.volt_rise = sym_features.volt_rise(cycleidx);
-            voxshape{vx}.sample_peak = samples.sample_peak(cycleidx);
-            voxshape{vx}.sample_last_zerox_decay = samples.sample_last_zerox_decay(cycleidx);
-            voxshape{vx}.sample_zerox_decay = samples.sample_zerox_decay(cycleidx);
-            voxshape{vx}.sample_zerox_rise = samples.sample_zerox_rise(cycleidx);
-            voxshape{vx}.sample_last_trough = samples.sample_last_trough(cycleidx);
-            voxshape{vx}.sample_next_trough = samples.sample_next_trough(cycleidx);
-            voxshape{vx}.period = period(cycleidx);
-            voxshape{vx}.volt_amp = sym_features.volt_amp(cycleidx);
-            voxshape{vx}.time_rdsym = sym_features.time_rdsym(cycleidx);
-            voxshape{vx}.time_ptsym = sym_features.time_ptsym(cycleidx);
-            voxshape{vx}.band_amp = band_amp(cycleidx);
+            cycle_features{vx}.time_peak = time_peak(cycleidx);
+            cycle_features{vx}.time_trough = time_trough(cycleidx);
+            cycle_features{vx}.volt_peak = volt_peak(cycleidx);
+            cycle_features{vx}.volt_trough = volt_trough(cycleidx);
+            cycle_features{vx}.time_decay = sym_features.time_decay(cycleidx);
+            cycle_features{vx}.time_rise = sym_features.time_rise(cycleidx);
+            cycle_features{vx}.volt_decay = sym_features.volt_decay(cycleidx);
+            cycle_features{vx}.volt_rise = sym_features.volt_rise(cycleidx);
+            cycle_features{vx}.sample_peak = samples.sample_peak(cycleidx);
+            cycle_features{vx}.sample_last_zerox_decay = samples.sample_last_zerox_decay(cycleidx);
+            cycle_features{vx}.sample_zerox_decay = samples.sample_zerox_decay(cycleidx);
+            cycle_features{vx}.sample_zerox_rise = samples.sample_zerox_rise(cycleidx);
+            cycle_features{vx}.sample_last_trough = samples.sample_last_trough(cycleidx);
+            cycle_features{vx}.sample_next_trough = samples.sample_next_trough(cycleidx);
+            cycle_features{vx}.period = period(cycleidx);
+            cycle_features{vx}.volt_amp = sym_features.volt_amp(cycleidx);
+            cycle_features{vx}.time_rdsym = sym_features.time_rdsym(cycleidx);
+            cycle_features{vx}.time_ptsym = sym_features.time_ptsym(cycleidx);
+            cycle_features{vx}.band_amp = band_amp(cycleidx);
 
-            cycles{vx} = datacycles;
-            timecycles{vx} = timecyc;
+            cycle_waveforms{vx} = datacycles;
+            cycle_samples{vx} = timecyc;
 
         end
 
-        % Save cycles and voxshape
-        save([p.results '\' freqnames{fb} '\cycles_s' num2str(s)] , 'cycles', 'timecycles')
-        save([p.results '\' freqnames{fb} '\voxshape_s' num2str(s)] , 'voxshape')
+        % Save cycle waveforms and cycle features
+        save([p.bycycle '\' freqnames{fb} '\cycle_waveforms_s' num2str(s)] , 'cycle_waveforms', 'cycle_samples')
+        save([p.bycycle '\' freqnames{fb} '\cycle_features_s' num2str(s)] , 'cycle_features')
 
     end
 
